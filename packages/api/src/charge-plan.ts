@@ -100,7 +100,8 @@ export function computeChargePlan(
   } else if (config.actualPvPowerW != null && futureHoursRaw.length > 0) {
     const currentForecastW = futureHoursRaw[0].powerW;
     const peakForecastW = Math.max(...futureHoursRaw.map(h => h.powerW));
-    const isStableProduction = currentForecastW > 500 && currentForecastW >= peakForecastW * 0.5;
+    const relevantPowerW = Math.max(currentForecastW, config.actualPvPowerW ?? 0);
+    const isStableProduction = relevantPowerW > 500 && relevantPowerW >= peakForecastW * 0.5;
     if (isStableProduction) {
       const rawFactor = config.actualPvPowerW / currentForecastW;
       forecastCorrectionFactor = Math.min(2, Math.max(0.1, rawFactor));

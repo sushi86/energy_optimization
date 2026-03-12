@@ -390,7 +390,7 @@ function ForecastChart({ data, actual, vrm, solar, corrected, hoveredSlot, setHo
   const correctedBySlot = new Map<string, number>();
   if (corrected) for (const c of corrected) correctedBySlot.set(toLocalKey(c.timestamp), c.powerW);
 
-  const allValues = [...data.map((d) => d.powerW), ...actual.map((d) => d.powerW)];
+  const allValues = [...data.map((d) => d.powerW), ...actual.map((d) => d.powerW), ...(corrected ?? []).map((c) => c.powerW)];
   const maxPower = Math.max(...allValues, 1);
 
   // Horizontal grid lines at nice rounded kW values

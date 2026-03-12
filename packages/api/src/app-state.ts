@@ -155,7 +155,8 @@ export class AppState {
       if (futureHours.length > 0) {
         const currentForecastW = futureHours[0].powerW;
         const peakForecastW = Math.max(...futureHours.map(h => h.powerW));
-        const isStableProduction = currentForecastW > 500 && currentForecastW >= peakForecastW * 0.5;
+        const relevantPowerW = Math.max(currentForecastW, systemState.pvPower);
+        const isStableProduction = relevantPowerW > 500 && relevantPowerW >= peakForecastW * 0.5;
         if (isStableProduction) {
           const rawFactor = Math.min(2, Math.max(0.1, systemState.pvPower / currentForecastW));
           // Add sample and discard samples from previous slots
