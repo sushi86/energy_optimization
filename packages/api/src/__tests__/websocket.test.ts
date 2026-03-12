@@ -1,6 +1,9 @@
 import { describe, it, expect, beforeAll, afterAll } from 'vitest';
 import Aedes from 'aedes';
 import { createServer, type Server } from 'net';
+import { mkdtempSync, rmSync } from 'fs';
+import { join } from 'path';
+import { tmpdir } from 'os';
 import WebSocket from 'ws';
 import { buildServer } from '../server.js';
 import { AppState } from '../app-state.js';
@@ -26,8 +29,10 @@ describe('WebSocket', () => {
   let mqttPort: number;
   let app: FastifyInstance;
   let appState: AppState;
+  let tmpDir: string;
 
   beforeAll(async () => {
+    tmpDir = mkdtempSync(join(tmpdir(), 'ws-test-'));
     ({ broker, server: netServer, port: mqttPort } = await startBroker());
     appState = await AppState.create({
       mqttUrl: `tcp://localhost:${mqttPort}`,
@@ -49,14 +54,16 @@ describe('WebSocket', () => {
       forecastCorrectionOverride: null,
       consumptionDayW: 500,
       consumptionNightW: 350,
+      dataDir: tmpDir,
     });
-    app = buildServer({ testing: true, appState });
+    app = buildServer({ testing: true, appState, pvSettingsPath: join(tmpDir, 'pv-settings.json') });
     await app.listen({ port: 0 });
   });
 
   afterAll(async () => {
     await app.close();
     await appState.stop();
+    rmSync(tmpDir, { recursive: true, force: true });
     await new Promise<void>((resolve) => {
       netServer.close(() => {
         broker.close(() => resolve());
