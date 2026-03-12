@@ -7,6 +7,3 @@ dist/
 data/
 .DS_Store
 .claude
-.stoneforge
-AGENTS.md
-/.stoneforge/.worktrees/

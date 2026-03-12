@@ -11,6 +11,7 @@ export interface ChargePlanConfig {
   consumptionDayW: number;
   consumptionNightW: number;
   priceOptimization: boolean;
+  allowFeedInNegativePrice: boolean;
   preferredMaxChargeW: number;
   /** Actual current PV power — used to correct optimistic forecasts */
   actualPvPowerW?: number;
@@ -147,12 +148,16 @@ export function computeChargePlan(
   const effectiveStartSoc = Math.max(currentSoc, config.minSocPercent);
   const batteryNeedKwh = Math.max(0, (targetSocPercent / 100 - effectiveStartSoc / 100) * batteryCapacityKwh);
   const totalClippingKwh = analysis.reduce((sum, s) => sum + Math.max(0, s.clippingW) * ih / 1000, 0);
-  // Negative-price slots always charge full surplus in simulation (line 229-232),
-  // so subtract their expected contribution to avoid unnecessary voluntary charging
-  // at positive prices.
-  const negativePriceChargeKwh = analysis
-    .filter(s => s.price != null && s.price < 0 && s.surplusW > 0)
-    .reduce((sum, s) => sum + s.surplusW * ih / 1000, 0);
+  // When allowFeedInNegativePrice is false, negative-price slots always charge
+  // full surplus in simulation, so subtract their expected contribution to avoid
+  // unnecessary voluntary charging at positive prices.
+  // When allowFeedInNegativePrice is true, negative-price slots are treated as
+  // normal candidates (they're just cheap slots), so don't subtract them.
+  const negativePriceChargeKwh = config.allowFeedInNegativePrice
+    ? 0
+    : analysis
+      .filter(s => s.price != null && s.price < 0 && s.surplusW > 0)
+      .reduce((sum, s) => sum + s.surplusW * ih / 1000, 0);
   const voluntaryNeedKwh = Math.max(0, batteryNeedKwh - totalClippingKwh - negativePriceChargeKwh);
 
   // --- Assign voluntary charge per slot ---
@@ -163,7 +168,7 @@ export function computeChargePlan(
       // PRICE OPTIMIZATION: charge in cheapest slots to minimize opportunity cost
       // → equivalent to maximizing revenue from feed-in in expensive slots
       const candidates = analysis
-        .filter(s => s.voluntarySurplusW > 0 && s.price != null && s.price >= 0)
+        .filter(s => s.voluntarySurplusW > 0 && s.price != null && (s.price >= 0 || config.allowFeedInNegativePrice))
         .map(s => ({ idx: s.idx, voluntarySurplusW: s.voluntarySurplusW, price: s.price! }))
         .sort((a, b) => a.price - b.price); // cheapest first
 
@@ -213,7 +218,7 @@ export function computeChargePlan(
     const s = analysis[i];
     const hour = s.timestamp.getHours();
     const minute = s.timestamp.getMinutes();
-    const isNegativePrice = s.price != null && s.price < 0;
+    const isNegativePrice = s.price != null && s.price <= 0 && !config.allowFeedInNegativePrice;
 
     let chargeW: number;
     let feedInW: number;

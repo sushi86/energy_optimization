@@ -187,7 +187,6 @@ export default function SettingsPage() {
             <p className="text-sm font-medium text-[var(--text-primary)]">Preisoptimierte Einspeisung</p>
             <p className="text-xs text-[var(--text-secondary)] mt-1">
               Verschiebt Einspeisung in Stunden mit hohen Börsenpreisen.
-              Bei Negativpreisen wird nicht eingespeist.
             </p>
           </div>
           <button
@@ -210,6 +209,42 @@ export default function SettingsPage() {
             <span
               className={`absolute top-0.5 left-0.5 w-5 h-5 rounded-full bg-white transition-transform ${
                 config?.priceOptimization ? 'translate-x-6' : ''
+              }`}
+            />
+          </button>
+        </div>
+      </div>
+
+      {/* Allow Feed-in at Negative Prices */}
+      <div className={`rounded-xl border border-[var(--border)] bg-[var(--bg-card)] p-5 mb-6 transition-opacity ${!config?.priceOptimization ? 'opacity-50 pointer-events-none' : ''}`}>
+        <div className="flex items-center justify-between">
+          <div>
+            <p className="text-sm font-medium text-[var(--text-primary)]">Einspeisung bei Negativpreisen</p>
+            <p className="text-xs text-[var(--text-secondary)] mt-1">
+              Erlaubt Einspeisung auch bei Strompreisen ≤ 0 ct/kWh.
+              Ohne diese Option wird bei Negativpreisen nicht eingespeist.
+            </p>
+          </div>
+          <button
+            onClick={() => {
+              const newConfig = { ...config, allowFeedInNegativePrice: !config?.allowFeedInNegativePrice };
+              setConfig(newConfig);
+              fetch('/api/config', {
+                method: 'PUT',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(newConfig),
+              }).then(() => showMessage('Einspeisung bei Negativpreisen ' + (newConfig.allowFeedInNegativePrice ? 'aktiviert' : 'deaktiviert')))
+                .catch(() => showMessage('Fehler beim Speichern'));
+            }}
+            className={`relative w-12 h-6 rounded-full transition-colors shrink-0 cursor-pointer ${
+              config?.allowFeedInNegativePrice
+                ? 'bg-[var(--accent)]'
+                : 'bg-[var(--border)]'
+            }`}
+          >
+            <span
+              className={`absolute top-0.5 left-0.5 w-5 h-5 rounded-full bg-white transition-transform ${
+                config?.allowFeedInNegativePrice ? 'translate-x-6' : ''
               }`}
             />
           </button>

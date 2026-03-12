@@ -14,6 +14,7 @@ function makeConfig(overrides: Partial<ChargePlanConfig> = {}): ChargePlanConfig
     consumptionDayW: 1000,
     consumptionNightW: 1000,
     priceOptimization: false,
+    allowFeedInNegativePrice: false,
     preferredMaxChargeW: 5000,
     ...overrides,
   };
@@ -209,6 +210,114 @@ describe('computeChargePlan', () => {
 
     // Expensive hours should mostly feed in, not charge
     expect(expensiveFeedInTotal).toBeGreaterThan(expensiveChargeTotal);
+  });
+
+  it('charges at cheapest slots regardless of allowFeedInNegativePrice flag', () => {
+    // Setup: 6 hours of production, negative prices in first 2 hours, positive in rest
+    const powers = Array(6).fill(6000);
+    const forecast = makeForecast(powers, 8);
+    const base = futureBase();
+    base.setHours(base.getHours() + 8);
+    // Hours 8-9: negative prices (-50 EUR/MWh), Hours 10-13: positive (100 EUR/MWh)
+    const pricePerHour = [-50, -50, 100, 100, 100, 100];
+    const prices: PriceEntry[] = [];
+    for (let h = 0; h < 6; h++) {
+      for (let q = 0; q < 4; q++) {
+        prices.push({
+          timestamp: Math.floor(base.getTime() / 1000) + h * 3600 + q * 900,
+          price: pricePerHour[h],
+        });
+      }
+    }
+
+    // With allowFeedInNegativePrice = false (default behavior)
+    const planDefault = computeChargePlan(forecast, prices, makeConfig({
+      currentSoc: 50,
+      targetSocPercent: 100,
+      batteryCapacityKwh: 16,
+      priceOptimization: true,
+      allowFeedInNegativePrice: false,
+    }));
+
+    // With allowFeedInNegativePrice = true
+    const planWithFlag = computeChargePlan(forecast, prices, makeConfig({
+      currentSoc: 50,
+      targetSocPercent: 100,
+      batteryCapacityKwh: 16,
+      priceOptimization: true,
+      allowFeedInNegativePrice: true,
+    }));
+
+    // In both cases, negative-price slots (first 8 slots) should charge heavily
+    const negSlotsDefault = planDefault.slots.slice(0, 8);
+    const negSlotsWithFlag = planWithFlag.slots.slice(0, 8);
+
+    const negChargeDefault = negSlotsDefault.reduce((s, h) => s + h.chargePowerW, 0);
+    const negChargeWithFlag = negSlotsWithFlag.reduce((s, h) => s + h.chargePowerW, 0);
+
+    // Both should charge in the cheap (negative) slots
+    expect(negChargeDefault).toBeGreaterThan(0);
+    expect(negChargeWithFlag).toBeGreaterThan(0);
+
+    // The expensive slots should prefer feed-in over charging in both cases
+    const expSlotsDefault = planDefault.slots.slice(8);
+    const expSlotsWithFlag = planWithFlag.slots.slice(8);
+
+    const expFeedInDefault = expSlotsDefault.reduce((s, h) => s + h.feedInPowerW, 0);
+    const expFeedInWithFlag = expSlotsWithFlag.reduce((s, h) => s + h.feedInPowerW, 0);
+    const expChargeDefault = expSlotsDefault.reduce((s, h) => s + h.chargePowerW, 0);
+    const expChargeWithFlag = expSlotsWithFlag.reduce((s, h) => s + h.chargePowerW, 0);
+
+    expect(expFeedInDefault).toBeGreaterThan(expChargeDefault);
+    expect(expFeedInWithFlag).toBeGreaterThan(expChargeWithFlag);
+  });
+
+  it('allowFeedInNegativePrice only controls feed-in, not charge planning', () => {
+    // Setup: all negative prices, ample surplus
+    const powers = Array(4).fill(8000);
+    const forecast = makeForecast(powers, 10);
+    const base = futureBase();
+    base.setHours(base.getHours() + 10);
+    const prices: PriceEntry[] = [];
+    for (let h = 0; h < 4; h++) {
+      for (let q = 0; q < 4; q++) {
+        prices.push({
+          timestamp: Math.floor(base.getTime() / 1000) + h * 3600 + q * 900,
+          price: -20,
+        });
+      }
+    }
+
+    const configBase = {
+      currentSoc: 80,
+      targetSocPercent: 100,
+      batteryCapacityKwh: 16,
+      priceOptimization: true,
+    };
+
+    const planNoFeedIn = computeChargePlan(forecast, prices, makeConfig({
+      ...configBase,
+      allowFeedInNegativePrice: false,
+    }));
+
+    const planAllowFeedIn = computeChargePlan(forecast, prices, makeConfig({
+      ...configBase,
+      allowFeedInNegativePrice: true,
+    }));
+
+    // With flag=false: no feed-in at all (negative price blocks feed-in)
+    const totalFeedInNoFlag = planNoFeedIn.slots.reduce((s, h) => s + h.feedInPowerW, 0);
+    expect(totalFeedInNoFlag).toBe(0);
+
+    // With flag=true: feed-in is allowed at negative prices
+    const totalFeedInWithFlag = planAllowFeedIn.slots.reduce((s, h) => s + h.feedInPowerW, 0);
+    expect(totalFeedInWithFlag).toBeGreaterThan(0);
+
+    // Both should still charge the battery to target
+    const lastSocNoFlag = planNoFeedIn.slots[planNoFeedIn.slots.length - 1].estimatedSoc;
+    const lastSocWithFlag = planAllowFeedIn.slots[planAllowFeedIn.slots.length - 1].estimatedSoc;
+    expect(lastSocNoFlag).toBe(100);
+    expect(lastSocWithFlag).toBe(100);
   });
 
   it('charges to minSoc before feeding in when SOC is below safety minimum', () => {

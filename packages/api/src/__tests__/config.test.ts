@@ -15,11 +15,9 @@ describe('loadConfig', () => {
   it('loads config with defaults', () => {
     process.env.VICTRON_VRM_TOKEN = 'test-token';
     process.env.VICTRON_VRM_SITE_ID = 'test-site';
-    process.env.VICTRON_MQTT_URL = 'tcp://localhost:1883';
-    process.env.VICTRON_DEVICE_ID = 'test-device-id';
     const config = loadConfig();
-    expect(config.VICTRON_MQTT_URL).toBe('tcp://localhost:1883');
-    expect(config.VICTRON_DEVICE_ID).toBe('test-device-id');
+    expect(config.VICTRON_MQTT_URL).toBe('tcp://192.168.1.224:1883');
+    expect(config.VICTRON_DEVICE_ID).toBe('c0619ab5450c');
     expect(config.BATTERY_CAPACITY_KWH).toBe(16);
     expect(config.MIN_SOC_PERCENT).toBe(20);
     expect(config.TARGET_SOC_PERCENT).toBe(100);
@@ -33,8 +31,6 @@ describe('loadConfig', () => {
   it('overrides defaults from env', () => {
     process.env.VICTRON_VRM_TOKEN = 'test-token';
     process.env.VICTRON_VRM_SITE_ID = 'test-site';
-    process.env.VICTRON_MQTT_URL = 'tcp://localhost:1883';
-    process.env.VICTRON_DEVICE_ID = 'test-device-id';
     process.env.BATTERY_CAPACITY_KWH = '20';
     process.env.MIN_SOC_PERCENT = '30';
     const config = loadConfig();

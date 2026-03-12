@@ -34,6 +34,7 @@ function makeController(overrides: Partial<ControllerDeps> = {}): Controller {
     winterModeThresholdFactor: 1.2,
     deadbandW: 1500,
     priceOptimization: false,
+    allowFeedInNegativePrice: false,
     ...overrides,
   });
 }
@@ -468,6 +469,33 @@ describe('Controller', () => {
 
       // Should NOT have priceOptimization in details (feature disabled)
       expect(result.details!.priceOptimization).toBeUndefined();
+    });
+
+    it('still picks negative price as charge hour when allowFeedInNegativePrice is true', () => {
+      const ctrl = makeController({ priceOptimization: true, allowFeedInNegativePrice: true });
+
+      const now = new Date();
+      now.setMinutes(0, 0, 0);
+      const nowSec = Math.floor(now.getTime() / 1000);
+      const forecastHours = [
+        { timestamp: new Date(now.getTime()), powerW: 8000 },
+        { timestamp: new Date(now.getTime() + 1 * 3600000), powerW: 8000 },
+        { timestamp: new Date(now.getTime() + 2 * 3600000), powerW: 8000 },
+      ];
+      const state = makeState({ pvPower: 8000, consumptionPower: 1000, batterySoc: 50 });
+      // Negative price now, positive later — negative is cheapest
+      const prices = [
+        { timestamp: nowSec, price: -10 },
+        { timestamp: nowSec + 3600, price: 200 },
+        { timestamp: nowSec + 7200, price: 200 },
+      ];
+      const result = ctrl.computeSetpoint(state, makeForecast(30, forecastHours), 24, prices);
+
+      expect(result.details).not.toBeNull();
+      expect(result.details!.priceOptimization).toBeDefined();
+      // Current slot is cheapest → should still be a charge hour
+      expect(result.details!.priceOptimization!.mode).toBe('charge');
+      expect(result.details!.desiredChargePowerW).toBeGreaterThan(0);
     });
 
     it('picks cheapest hours for charging regardless of position', () => {

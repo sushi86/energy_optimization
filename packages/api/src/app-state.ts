@@ -23,6 +23,7 @@ export interface AppStateOptions {
   largeChangeThresholdW: number;
   deadbandW: number;
   priceOptimization: boolean;
+  allowFeedInNegativePrice: boolean;
   feedInRateCentPerKwh: number;
   preferredMaxChargeW: number;
   forecastCorrectionOverride: number | null;
@@ -64,6 +65,7 @@ export class AppState {
       winterModeThresholdFactor: options.winterModeThresholdFactor,
       deadbandW: options.deadbandW,
       priceOptimization: options.priceOptimization ?? false,
+      allowFeedInNegativePrice: options.allowFeedInNegativePrice ?? false,
     });
     const dataDir = resolve(dirname(fileURLToPath(import.meta.url)), '../../../data');
     this.pvSettingsPath = resolve(dataDir, 'pv-settings.json');
@@ -176,6 +178,7 @@ export class AppState {
         consumptionDayW: this.config.consumptionDayW,
         consumptionNightW: this.config.consumptionNightW,
         priceOptimization: this.config.priceOptimization,
+        allowFeedInNegativePrice: this.config.allowFeedInNegativePrice,
         preferredMaxChargeW: this.config.preferredMaxChargeW,
         actualPvPowerW: systemState.pvPower,
         forecastCorrectionOverride: averagedCorrectionOverride,
@@ -218,6 +221,7 @@ export class AppState {
       winterModeThresholdFactor: this.config.winterModeThresholdFactor,
       deadbandW: this.config.deadbandW,
       priceOptimization: this.config.priceOptimization ?? false,
+      allowFeedInNegativePrice: this.config.allowFeedInNegativePrice ?? false,
     });
     this.saveConfigOverrides();
     return { ...this.config };
@@ -236,6 +240,7 @@ export class AppState {
         winterModeThresholdFactor: this.config.winterModeThresholdFactor,
         deadbandW: this.config.deadbandW,
         priceOptimization: this.config.priceOptimization ?? false,
+        allowFeedInNegativePrice: this.config.allowFeedInNegativePrice ?? false,
       });
       console.log('[config] Loaded overrides from disk:', Object.keys(overrides).join(', '));
     } catch {
@@ -253,6 +258,7 @@ export class AppState {
       winterModeThresholdFactor: this.config.winterModeThresholdFactor,
       deadbandW: this.config.deadbandW,
       priceOptimization: this.config.priceOptimization,
+      allowFeedInNegativePrice: this.config.allowFeedInNegativePrice,
       feedInRateCentPerKwh: this.config.feedInRateCentPerKwh,
       preferredMaxChargeW: this.config.preferredMaxChargeW,
       forecastCorrectionOverride: this.config.forecastCorrectionOverride,

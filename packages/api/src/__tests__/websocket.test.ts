@@ -43,6 +43,7 @@ describe('WebSocket', () => {
       largeChangeThresholdW: 3000,
       deadbandW: 1500,
       priceOptimization: false,
+      allowFeedInNegativePrice: false,
       feedInRateCentPerKwh: 7,
       preferredMaxChargeW: 5000,
       forecastCorrectionOverride: null,

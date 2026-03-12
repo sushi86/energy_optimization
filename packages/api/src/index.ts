@@ -29,6 +29,7 @@ async function main() {
     largeChangeThresholdW: config.LARGE_CHANGE_THRESHOLD_W,
     deadbandW: config.DEADBAND_W,
     priceOptimization: config.PRICE_OPTIMIZATION,
+    allowFeedInNegativePrice: config.ALLOW_FEED_IN_NEGATIVE_PRICE,
     feedInRateCentPerKwh: config.FEED_IN_RATE_CENT_PER_KWH,
     preferredMaxChargeW: config.PREFERRED_MAX_CHARGE_W,
     forecastCorrectionOverride: null,

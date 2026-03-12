@@ -17,6 +17,7 @@ export interface ControllerDeps {
   winterModeThresholdFactor: number;
   deadbandW: number;
   priceOptimization: boolean;
+  allowFeedInNegativePrice: boolean;
 }
 
 export interface ControllerDetails {
@@ -334,7 +335,7 @@ export class Controller {
 
     // Price optimization: determine if this is a charge hour or feed-in hour
     const schedule = this.getChargeSchedule(prices, forecast, batteryNeedKwh, now);
-    const isNegativePrice = schedule != null && schedule.currentPrice < 0;
+    const isNegativePrice = schedule != null && schedule.currentPrice <= 0 && !this.config.allowFeedInNegativePrice;
     const isFeedInHour = schedule != null && !schedule.isChargeHour && !isNegativePrice;
 
     // During feed-in hours: skip voluntary charging, maximize feed-in
@@ -540,8 +541,8 @@ export class Controller {
     if (futurePrices.length === 0) return null;
     const avgPrice = futurePrices.reduce((a, b) => a + b, 0) / futurePrices.length;
 
-    // Negative price: always charge (never feed in)
-    if (currentPrice < 0) {
+    // Negative price: charge (never feed in) — unless explicitly allowed
+    if (currentPrice <= 0 && !this.config.allowFeedInNegativePrice) {
       return {
         isChargeHour: true,
         currentPrice,

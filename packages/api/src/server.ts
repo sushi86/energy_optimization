@@ -36,9 +36,7 @@ let mpptTemperatureC: number | null = null;
 
 async function fetchMpptTemperature(): Promise<void> {
   try {
-    const url = process.env.MPPT_TEMPERATURE_URL;
-    if (!url) return;
-    const res = await fetch(url);
+    const res = await fetch('http://192.168.1.176/rpc/Temperature.GetStatus?id=101');
     if (!res.ok) throw new Error(`HTTP ${res.status}`);
     const data = await res.json();
     mpptTemperatureC = data.tC ?? null;
@@ -121,6 +119,7 @@ export function buildServer(options: ServerOptions = {}): FastifyInstance {
           consumptionDayW: config.consumptionDayW,
           consumptionNightW: config.consumptionNightW,
           priceOptimization: config.priceOptimization,
+          allowFeedInNegativePrice: config.allowFeedInNegativePrice,
           preferredMaxChargeW: config.preferredMaxChargeW,
           actualPvPowerW: s.pvPower,
           forecastCorrectionOverride: config.forecastCorrectionOverride,
@@ -142,6 +141,7 @@ export function buildServer(options: ServerOptions = {}): FastifyInstance {
         },
         batteryCapacityKwh: config.batteryCapacityKwh,
         priceOptimizationEnabled: config.priceOptimization,
+        allowFeedInNegativePrice: config.allowFeedInNegativePrice,
         forecastCorrectionOverride: config.forecastCorrectionOverride,
         regulation: {
           lastTime: state.getRegulationInfo().lastRegulationTime.toISOString(),
@@ -241,6 +241,7 @@ export function buildServer(options: ServerOptions = {}): FastifyInstance {
       largeChangeThresholdW: c.largeChangeThresholdW,
       deadbandW: c.deadbandW,
       priceOptimization: c.priceOptimization,
+      allowFeedInNegativePrice: c.allowFeedInNegativePrice,
       feedInRateCentPerKwh: c.feedInRateCentPerKwh,
       forecastCorrectionOverride: c.forecastCorrectionOverride,
     };
@@ -260,6 +261,7 @@ export function buildServer(options: ServerOptions = {}): FastifyInstance {
       largeChangeThresholdW: updated.largeChangeThresholdW,
       deadbandW: updated.deadbandW,
       priceOptimization: updated.priceOptimization,
+      allowFeedInNegativePrice: updated.allowFeedInNegativePrice,
       feedInRateCentPerKwh: updated.feedInRateCentPerKwh,
       forecastCorrectionOverride: updated.forecastCorrectionOverride,
     };

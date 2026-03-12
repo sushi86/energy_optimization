@@ -1,10 +1,7 @@
 #!/bin/bash
 set -e
 
-if [ -f .env ]; then
-  DEPLOY_SERVER=$(grep '^DEPLOY_SERVER=' .env | cut -d'=' -f2)
-fi
-SERVER="${DEPLOY_SERVER:?DEPLOY_SERVER must be set in .env}"
+SERVER="root@192.168.1.253"
 REMOTE_DIR="/root"
 IMAGE="energy-control"
 
