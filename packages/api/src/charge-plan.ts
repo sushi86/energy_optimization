@@ -15,7 +15,7 @@ export interface ChargePlanConfig {
   preferredMaxChargeW: number;
   /** Actual current PV power — used to correct optimistic forecasts */
   actualPvPowerW?: number;
-  /** Manual override for forecast correction factor (0.1–1.0). null = auto. */
+  /** Manual override for forecast correction factor (0.1–2.0). null = auto. */
   forecastCorrectionOverride?: number | null;
 }
 
@@ -96,17 +96,17 @@ export function computeChargePlan(
   // Floor at 0.1 to prevent overcorrection.
   let forecastCorrectionFactor = 1;
   if (config.forecastCorrectionOverride != null) {
-    forecastCorrectionFactor = Math.min(1, Math.max(0.1, config.forecastCorrectionOverride));
+    forecastCorrectionFactor = Math.min(2, Math.max(0.1, config.forecastCorrectionOverride));
   } else if (config.actualPvPowerW != null && futureHoursRaw.length > 0) {
     const currentForecastW = futureHoursRaw[0].powerW;
     const peakForecastW = Math.max(...futureHoursRaw.map(h => h.powerW));
     const isStableProduction = currentForecastW > 500 && currentForecastW >= peakForecastW * 0.5;
     if (isStableProduction) {
       const rawFactor = config.actualPvPowerW / currentForecastW;
-      forecastCorrectionFactor = Math.min(1, Math.max(0.1, rawFactor));
+      forecastCorrectionFactor = Math.min(2, Math.max(0.1, rawFactor));
     }
   }
-  const futureHours = forecastCorrectionFactor < 1
+  const futureHours = forecastCorrectionFactor !== 1
     ? futureHoursRaw.map(h => ({ ...h, powerW: Math.round(h.powerW * forecastCorrectionFactor) }))
     : futureHoursRaw;
 

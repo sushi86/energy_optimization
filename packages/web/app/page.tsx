@@ -341,7 +341,7 @@ function ForecastCorrectionControl({ factor, serverOverride }: { factor: number;
       <input
         type="range"
         min={10}
-        max={100}
+        max={200}
         step={5}
         value={displayPct}
         onChange={(e) => {
@@ -352,7 +352,7 @@ function ForecastCorrectionControl({ factor, serverOverride }: { factor: number;
         className="flex-1 h-1 accent-[var(--accent)] cursor-pointer"
         style={{ maxWidth: '160px' }}
       />
-      <span className={`text-[11px] font-medium min-w-[36px] text-right ${displayPct < 100 ? 'text-amber-400' : 'text-[var(--text-secondary)]'}`}>
+      <span className={`text-[11px] font-medium min-w-[36px] text-right ${displayPct !== 100 ? 'text-amber-400' : 'text-[var(--text-secondary)]'}`}>
         {displayPct}%
       </span>
       {isManual ? (
@@ -1300,7 +1300,7 @@ export default function Dashboard() {
       {/* Forecast Chart */}
       {forecast.length > 0 && (() => {
         const corrFactor = status?.chargePlan?.forecastCorrectionFactor ?? 1;
-        const isCorrected = corrFactor < 1;
+        const isCorrected = corrFactor !== 1;
         const correctedForecast = isCorrected
           ? forecast.map(f => ({ ...f, powerW: Math.round(f.powerW * corrFactor) }))
           : undefined;
