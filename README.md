@@ -9,7 +9,19 @@
   Real-time grid regulation, price-optimized charging, and PV forecast ensemble.
 </p>
 
+<p align="center">
+  <img src="docs/images/victron-logo.png" height="40" alt="Victron Energy">
+</p>
+
 ---
+
+<p align="center">
+  <img src="docs/images/screenshot-dashboard.png" width="700" alt="Dashboard — real-time power overview and controller status">
+</p>
+
+<p align="center">
+  <img src="docs/images/screenshot-charts.png" width="700" alt="Charts — PV forecast, spot prices, and charge plan">
+</p>
 
 ## What it does
 
@@ -126,6 +138,25 @@ The API exposes WebSocket for real-time updates and REST endpoints for configura
 ```bash
 pnpm test
 ```
+
+## Roadmap
+
+Currently, Energy Control is built exclusively for **Victron Energy** systems. Future integrations are planned:
+
+<table>
+  <tr>
+    <td align="center" width="50%">
+      <img src="docs/images/evcc-logo.png" height="36" alt="EVCC"><br>
+      <strong>EVCC</strong><br>
+      <sub>EV charging integration — coordinate battery and wallbox to charge your car from excess solar at the best price.</sub>
+    </td>
+    <td align="center" width="50%">
+      <img src="docs/images/hass-logo.png" height="36" alt="Home Assistant"><br>
+      <strong>Home Assistant</strong><br>
+      <sub>Expose sensors, controls, and charge plans as HA entities for automation and multi-system dashboards.</sub>
+    </td>
+  </tr>
+</table>
 
 ## License
 
