@@ -545,6 +545,9 @@ function ChargePlanChart({ plan, hoveredSlot, setHoveredSlot, actualFeedIn, actu
   prices: PriceEntry[];
 }) {
 
+  const [visibleSeries, setVisibleSeries] = useState({ charge: true, clipping: true, feedIn: true, consumption: true, soc: true });
+  const toggle = (key: keyof typeof visibleSeries) => setVisibleSeries(prev => ({ ...prev, [key]: !prev[key] }));
+
   // Build lookup by HH:MM key from plan slots
   const slotByKey = new Map<string, ChargePlanSlot>();
   for (const s of plan.slots) {
@@ -710,6 +713,7 @@ function ChargePlanChart({ plan, hoveredSlot, setHoveredSlot, actualFeedIn, actu
         ))}
 
         {/* SOC line overlay using SVG — fixed 96-slot grid */}
+        {visibleSeries.soc && (
         <svg className="absolute inset-0 w-full h-full pointer-events-none z-10" viewBox={`0 0 ${96 * 100} 100`} preserveAspectRatio="none">
           <defs>
             <pattern id="hatch-full" patternUnits="userSpaceOnUse" width="6" height="6" patternTransform="rotate(45)">
@@ -738,9 +742,10 @@ function ChargePlanChart({ plan, hoveredSlot, setHoveredSlot, actualFeedIn, actu
             return <circle cx={p.x} cy={100 - (p.soc ?? 50)} r="4" fill="#10EFD8" vectorEffect="non-scaling-stroke" />;
           })()}
         </svg>
+        )}
 
         {/* Max SOC label at peak of curve */}
-        {(() => {
+        {visibleSeries.soc && (() => {
           let maxSoc = 0;
           let maxIdx = 0;
           for (let i = 0; i < socPoints.length; i++) {
@@ -761,7 +766,7 @@ function ChargePlanChart({ plan, hoveredSlot, setHoveredSlot, actualFeedIn, actu
         })()}
 
         {/* SOC axis labels (right side) */}
-        {[25, 50, 75, 100].map(soc => (
+        {visibleSeries.soc && [25, 50, 75, 100].map(soc => (
           <div
             key={soc}
             className="absolute right-0 pointer-events-none z-0"
@@ -778,19 +783,21 @@ function ChargePlanChart({ plan, hoveredSlot, setHoveredSlot, actualFeedIn, actu
         <div className="flex items-end gap-px h-full" onMouseLeave={() => setHoveredSlot(null)} onTouchMove={(e) => handleTouchMove(e, setHoveredSlot)} onTouchEnd={() => setHoveredSlot(null)}>
           {TIME_GRID.map((slot, i) => {
             const h = slotByKey.get(slot.key);
-            const chargeW = h?.chargePowerW ?? 0;
-            const clippingW = Math.min(h?.clippingW ?? 0, chargeW); // clipping portion of charge
-            const voluntaryW = Math.max(0, chargeW - clippingW);
+            const rawChargeW = h?.chargePowerW ?? 0;
+            const rawClippingW = Math.min(h?.clippingW ?? 0, rawChargeW);
             const isPast = slot.key < nowKey;
             const actual = actualFeedIn.get(slot.key);
             const actualBattW = actualBattery.get(slot.key) ?? 0;
             const actualConsW = actualConsumption.get(slot.key) ?? 0;
             const hasActualHistory = isPast && (actual || actualBattW !== 0 || actualConsW > 0);
-            // For past slots: use actual feed-in if available
-            const feedInW = (isPast && actual) ? actual.feedInW : (h?.feedInPowerW ?? 0);
-            // For past slots: use actual battery charge (positive = charging)
-            const battChargeW = (isPast && hasActualHistory) ? Math.max(0, actualBattW) : 0;
-            const consW = (isPast && hasActualHistory) ? actualConsW : 0;
+
+            // Apply visibility toggles
+            const chargeW = visibleSeries.charge ? rawChargeW : 0;
+            const clippingW = visibleSeries.clipping ? Math.min(rawClippingW, chargeW) : 0;
+            const voluntaryW = Math.max(0, chargeW - clippingW);
+            const feedInW = visibleSeries.feedIn ? ((isPast && actual) ? actual.feedInW : (h?.feedInPowerW ?? 0)) : 0;
+            const battChargeW = (hasActualHistory && visibleSeries.charge) ? Math.max(0, actualBattW) : 0;
+            const consW = (hasActualHistory && visibleSeries.consumption) ? actualConsW : 0;
 
             const clippingPct = (clippingW / maxPower) * 100;
             const voluntaryPct = (voluntaryW / maxPower) * 100;
@@ -961,13 +968,13 @@ function ChargePlanChart({ plan, hoveredSlot, setHoveredSlot, actualFeedIn, actu
         })}
       </div>
 
-      {/* Legend */}
-      <div className="flex items-center gap-4 text-[10px] text-[var(--text-secondary)] mt-2">
-        <span className="flex items-center gap-1"><span className="inline-block w-2 h-2 rounded-sm bg-[#3b82f6]" /> Laden</span>
-        <span className="flex items-center gap-1"><span className="inline-block w-2 h-2 rounded-sm bg-[#eab308]" /> Clipping</span>
-        <span className="flex items-center gap-1"><span className="inline-block w-2 h-2 rounded-sm bg-[#22c55e]" /> Einspeisung</span>
-        <span className="flex items-center gap-1"><span className="inline-block w-2 h-2 rounded-sm bg-[#ef4444]" /> Verbrauch</span>
-        <span className="flex items-center gap-1"><span className="inline-block w-2 h-2 rounded-full" style={{ width: '6px', height: '6px', backgroundColor: '#10EFD8' }} /> SOC</span>
+      {/* Legend — click to toggle */}
+      <div className="flex items-center gap-4 text-[10px] text-[var(--text-secondary)] mt-2 select-none">
+        <button type="button" onClick={() => toggle('charge')} className={`flex items-center gap-1 ${visibleSeries.charge ? '' : 'opacity-30'}`}><span className="inline-block w-2 h-2 rounded-sm bg-[#3b82f6]" /> Laden</button>
+        <button type="button" onClick={() => toggle('clipping')} className={`flex items-center gap-1 ${visibleSeries.clipping ? '' : 'opacity-30'}`}><span className="inline-block w-2 h-2 rounded-sm bg-[#eab308]" /> Clipping</button>
+        <button type="button" onClick={() => toggle('feedIn')} className={`flex items-center gap-1 ${visibleSeries.feedIn ? '' : 'opacity-30'}`}><span className="inline-block w-2 h-2 rounded-sm bg-[#22c55e]" /> Einspeisung</button>
+        <button type="button" onClick={() => toggle('consumption')} className={`flex items-center gap-1 ${visibleSeries.consumption ? '' : 'opacity-30'}`}><span className="inline-block w-2 h-2 rounded-sm bg-[#ef4444]" /> Verbrauch</button>
+        <button type="button" onClick={() => toggle('soc')} className={`flex items-center gap-1 ${visibleSeries.soc ? '' : 'opacity-30'}`}><span className="inline-block w-2 h-2 rounded-full" style={{ width: '6px', height: '6px', backgroundColor: '#10EFD8' }} /> SOC</button>
       </div>
     </div>
   );
