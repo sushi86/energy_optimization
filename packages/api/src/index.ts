@@ -9,6 +9,8 @@ import { AppState } from './app-state.js';
 import { buildServer } from './server.js';
 import { InexogyService } from './inexogy-service.js';
 import { GridHistoryService } from './grid-history-service.js';
+import { NibePoller } from './nibe-poller.js';
+import { WallboxPoller } from './wallbox-poller.js';
 
 async function main() {
   const config = loadConfig();
@@ -64,7 +66,25 @@ async function main() {
     console.log('[energy-control] inexogy smart meter enabled');
   }
 
-  const server = buildServer({ appState, inexogyService, gridHistoryService, batteryHistoryService, consumptionHistoryService });
+  let nibePoller: NibePoller | undefined;
+  if (config.NIBE_URL && config.NIBE_USERNAME && config.NIBE_PASSWORD) {
+    nibePoller = new NibePoller({
+      url: config.NIBE_URL,
+      username: config.NIBE_USERNAME,
+      password: config.NIBE_PASSWORD,
+    });
+    nibePoller.start();
+    console.log('[energy-control] nibe heat pump poller enabled');
+  }
+
+  let wallboxPoller: WallboxPoller | undefined;
+  if (config.WALLBOX_URL) {
+    wallboxPoller = new WallboxPoller({ url: config.WALLBOX_URL });
+    wallboxPoller.start();
+    console.log('[energy-control] tesla wallbox poller enabled');
+  }
+
+  const server = buildServer({ appState, inexogyService, gridHistoryService, batteryHistoryService, consumptionHistoryService, nibePoller, wallboxPoller });
   await server.listen({ port: 3002, host: '0.0.0.0' });
 
   console.log('[energy-control] Server running on http://0.0.0.0:3002');
@@ -76,6 +96,8 @@ async function main() {
     gridHistoryService.stop();
     batteryHistoryService.stop();
     consumptionHistoryService.stop();
+    nibePoller?.stop();
+    wallboxPoller?.stop();
     process.exit(0);
   };
 

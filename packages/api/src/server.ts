@@ -9,6 +9,8 @@ import { computeEnsembleForecast } from './ensemble-forecast.js';
 import { computeChargePlan } from './charge-plan.js';
 import type { InexogyService } from './inexogy-service.js';
 import type { GridHistoryService } from './grid-history-service.js';
+import type { NibePoller } from './nibe-poller.js';
+import type { WallboxPoller } from './wallbox-poller.js';
 
 export interface ServerOptions {
   testing?: boolean;
@@ -18,6 +20,8 @@ export interface ServerOptions {
   gridHistoryService?: GridHistoryService;
   batteryHistoryService?: GridHistoryService;
   consumptionHistoryService?: GridHistoryService;
+  nibePoller?: NibePoller;
+  wallboxPoller?: WallboxPoller;
 }
 
 export interface PriceEntry {
@@ -78,6 +82,8 @@ export function buildServer(options: ServerOptions = {}): FastifyInstance {
   const gridHistoryService = options.gridHistoryService;
   const batteryHistoryService = options.batteryHistoryService;
   const consumptionHistoryService = options.consumptionHistoryService;
+  const nibePoller = options.nibePoller;
+  const wallboxPoller = options.wallboxPoller;
   const pvSettingsPath = options.pvSettingsPath ?? resolve(dirname(fileURLToPath(import.meta.url)), '../../../data/pv-settings.json');
 
   // WebSocket support
@@ -153,6 +159,8 @@ export function buildServer(options: ServerOptions = {}): FastifyInstance {
         },
         chargePlan: chargePlanData,
         mpptTemperatureC,
+        heatPumpPowerW: nibePoller?.getPowerW() ?? null,
+        wallboxPowerW: wallboxPoller?.getPowerW() ?? null,
         timestamp: s.timestamp.toISOString(),
       });
 
