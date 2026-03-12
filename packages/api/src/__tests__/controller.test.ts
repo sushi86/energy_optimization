@@ -542,6 +542,8 @@ describe('Controller', () => {
         estimatedFullHour: null,
         currentSoc: 50,
         forecastCorrectionFactor: 1,
+        negativeStreak6hActive: false,
+        negativeStreak6hDeductionCent: 0,
       };
       const result = ctrl.computeSetpoint(state, makeForecast(30), 25, [], plan);
       expect(result.details).not.toBeNull();
@@ -596,6 +598,8 @@ describe('Controller', () => {
         estimatedFullHour: null,
         currentSoc: 90,
         forecastCorrectionFactor: 1,
+        negativeStreak6hActive: false,
+        negativeStreak6hDeductionCent: 0,
       };
 
       const result = ctrl.computeSetpoint(state, makeForecast(30, forecastHours), 25, [], plan);
@@ -650,6 +654,8 @@ describe('Controller', () => {
         estimatedFullHour: null,
         currentSoc: 90,
         forecastCorrectionFactor: 1,
+        negativeStreak6hActive: false,
+        negativeStreak6hDeductionCent: 0,
       };
 
       const result = ctrl.computeSetpoint(state, makeForecast(30, forecastHours), 25, [], plan);
@@ -689,6 +695,8 @@ describe('Controller', () => {
         estimatedFullHour: null,
         currentSoc: 50,
         forecastCorrectionFactor: 1,
+        negativeStreak6hActive: false,
+        negativeStreak6hDeductionCent: 0,
       };
 
       const result = ctrl.computeSetpoint(state, makeForecast(30, forecastHours), 25, [], plan);
