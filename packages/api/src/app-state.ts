@@ -29,6 +29,8 @@ export interface AppStateOptions {
   forecastCorrectionOverride: number | null;
   consumptionDayW: number;
   consumptionNightW: number;
+  /** Optional override for the data directory (used by tests for isolation) */
+  dataDir?: string;
 }
 
 export class AppState {
@@ -67,7 +69,7 @@ export class AppState {
       priceOptimization: options.priceOptimization ?? false,
       allowFeedInNegativePrice: options.allowFeedInNegativePrice ?? false,
     });
-    const dataDir = resolve(dirname(fileURLToPath(import.meta.url)), '../../../data');
+    const dataDir = options.dataDir ?? resolve(dirname(fileURLToPath(import.meta.url)), '../../../data');
     this.pvSettingsPath = resolve(dataDir, 'pv-settings.json');
     this.configOverridesPath = resolve(dataDir, 'config-overrides.json');
 
