@@ -10,10 +10,12 @@ const NIBE_OPTIONS = {
   password: 'secret',
 };
 
-function createPointsResponse(variableId: number, value: number) {
-  return [
-    { variableId, value, name: 'some_variable' },
-  ];
+function createPointsResponse(variableId: number, integerValue: number) {
+  return {
+    [String(variableId)]: {
+      value: { integerValue, isOk: true },
+    },
+  };
 }
 
 describe('NibePoller', () => {
@@ -35,7 +37,7 @@ describe('NibePoller', () => {
   it('parses current_power_consumption correctly (150 raw → 1.5kW → 1500W)', async () => {
     mockFetch.mockResolvedValueOnce({
       ok: true,
-      json: async () => createPointsResponse(43141, 150),
+      json: async () => createPointsResponse(25165, 150),
     });
 
     await poller.poll();
@@ -47,7 +49,7 @@ describe('NibePoller', () => {
     // First poll with valid value
     mockFetch.mockResolvedValueOnce({
       ok: true,
-      json: async () => createPointsResponse(43141, 150),
+      json: async () => createPointsResponse(25165, 150),
     });
     await poller.poll();
     expect(poller.getPowerW()).toBe(1500);
@@ -55,7 +57,7 @@ describe('NibePoller', () => {
     // Second poll with invalid sensor value
     mockFetch.mockResolvedValueOnce({
       ok: true,
-      json: async () => createPointsResponse(43141, -32768),
+      json: async () => createPointsResponse(25165, -32768),
     });
     await poller.poll();
 
@@ -66,7 +68,7 @@ describe('NibePoller', () => {
     // First poll succeeds
     mockFetch.mockResolvedValueOnce({
       ok: true,
-      json: async () => createPointsResponse(43141, 200),
+      json: async () => createPointsResponse(25165, 200),
     });
     await poller.poll();
     expect(poller.getPowerW()).toBe(2000);
@@ -81,7 +83,7 @@ describe('NibePoller', () => {
   it('calls the correct URL and sends Basic Auth header', async () => {
     mockFetch.mockResolvedValueOnce({
       ok: true,
-      json: async () => createPointsResponse(43141, 100),
+      json: async () => createPointsResponse(25165, 100),
     });
 
     await poller.poll();
@@ -94,10 +96,10 @@ describe('NibePoller', () => {
     expect(options.headers['Accept']).toBe('application/json');
   });
 
-  it('returns null when variableId 43141 is not present in response', async () => {
+  it('returns null when variableId is not present in response', async () => {
     mockFetch.mockResolvedValueOnce({
       ok: true,
-      json: async () => [{ variableId: 99999, value: 500 }],
+      json: async () => ({ '99999': { value: { integerValue: 500, isOk: true } } }),
     });
 
     await poller.poll();

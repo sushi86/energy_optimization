@@ -3,6 +3,12 @@ interface VitalsResponse {
   vehicle_connected: boolean;
   vehicle_current_a: number;
   grid_v: number;
+  currentA_a: number;
+  currentB_a: number;
+  currentC_a: number;
+  voltageA_v: number;
+  voltageB_v: number;
+  voltageC_v: number;
   session_energy_wh: number;
 }
 
@@ -46,8 +52,14 @@ export class WallboxPoller {
     try {
       const res = await fetch(`${this.url}/api/1/vitals`);
       const data = (await res.json()) as VitalsResponse;
-      this.powerW = Math.round(data.vehicle_current_a * data.grid_v);
       this.charging = data.contactor_closed;
+      this.powerW = this.charging
+        ? Math.round(
+            data.currentA_a * data.voltageA_v +
+            data.currentB_a * data.voltageB_v +
+            data.currentC_a * data.voltageC_v,
+          )
+        : 0;
     } catch (err) {
       console.error('[wallbox] Poll error:', (err as Error).message);
       // Keep last known values

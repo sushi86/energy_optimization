@@ -1,6 +1,21 @@
-const CURRENT_POWER_VARIABLE_ID = 43141;
+const CURRENT_POWER_VARIABLE_ID = 25165;
 const INVALID_SENSOR_VALUE = -32768;
+const POWER_DIVISOR = 100;
 const POLL_INTERVAL_MS = 60_000;
+
+// Allow self-signed certificates for NIBE local API
+process.env.NODE_TLS_REJECT_UNAUTHORIZED = '0';
+
+interface NibePointValue {
+  integerValue: number;
+  isOk: boolean;
+}
+
+interface NibePoint {
+  value: NibePointValue;
+}
+
+type NibeResponse = Record<string, NibePoint>;
 
 export interface NibePollerOptions {
   url: string;
@@ -53,23 +68,25 @@ export class NibePoller {
         return;
       }
 
-      const data = await res.json() as Array<{ variableId: number; value: number }>;
-      const point = data.find((p) => p.variableId === CURRENT_POWER_VARIABLE_ID);
+      const data: NibeResponse = await res.json();
+      const point = data[String(CURRENT_POWER_VARIABLE_ID)];
 
       if (!point) {
-        console.warn('[nibe] variableId 43141 not found in response');
+        console.warn(`[nibe] variableId ${CURRENT_POWER_VARIABLE_ID} not found in response`);
         this.powerW = null;
         return;
       }
 
-      if (point.value === INVALID_SENSOR_VALUE) {
+      const rawValue = point.value.integerValue;
+
+      if (rawValue === INVALID_SENSOR_VALUE) {
         console.warn('[nibe] Sensor invalid (value -32768)');
         this.powerW = null;
         return;
       }
 
       // Raw value / 100 = kW, × 1000 = W
-      this.powerW = (point.value / 100) * 1000;
+      this.powerW = (rawValue / POWER_DIVISOR) * 1000;
     } catch (err) {
       console.error('[nibe] Fetch error, keeping last value:', (err as Error).message);
       // Keep last known value — do not reset to null

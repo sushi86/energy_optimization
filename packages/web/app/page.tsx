@@ -1583,10 +1583,23 @@ export default function Dashboard() {
           <button
             onClick={() => {
               const csv = buildExportCsv(status, prices);
-              navigator.clipboard.writeText(csv).then(() => {
+              if (navigator.clipboard?.writeText) {
+                navigator.clipboard.writeText(csv).then(() => {
+                  setCsvCopied(true);
+                  setTimeout(() => setCsvCopied(false), 2000);
+                });
+              } else {
+                const textarea = document.createElement('textarea');
+                textarea.value = csv;
+                textarea.style.position = 'fixed';
+                textarea.style.opacity = '0';
+                document.body.appendChild(textarea);
+                textarea.select();
+                document.execCommand('copy');
+                document.body.removeChild(textarea);
                 setCsvCopied(true);
                 setTimeout(() => setCsvCopied(false), 2000);
-              });
+              }
             }}
             className="flex items-center gap-2 px-4 py-2 rounded-lg border border-[var(--border)] bg-[var(--bg-card)] text-sm text-[var(--text-secondary)] hover:text-[var(--text-primary)] hover:border-[var(--text-secondary)] transition-colors cursor-pointer"
           >
