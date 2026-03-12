@@ -66,6 +66,8 @@ export interface SystemStatus {
   regulation?: { lastTime: string; intervalMs: number };
   chargePlan?: ChargePlan | null;
   mpptTemperatureC?: number | null;
+  heatPumpPowerW?: number | null;
+  wallboxPowerW?: number | null;
   timestamp: string;
 }
 

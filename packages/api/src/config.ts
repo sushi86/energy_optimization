@@ -20,6 +20,10 @@ const configSchema = z.object({
   INEXOGY_EMAIL: z.string().optional(),
   INEXOGY_PASSWORD: z.string().optional(),
   INEXOGY_METER_ID: z.string().optional(),
+  NIBE_URL: z.string().optional(),
+  NIBE_USERNAME: z.string().optional(),
+  NIBE_PASSWORD: z.string().optional(),
+  WALLBOX_URL: z.string().optional(),
 });
 
 export type Config = z.infer<typeof configSchema>;

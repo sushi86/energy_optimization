@@ -4,6 +4,7 @@ import { useEffect, useState, useRef, useCallback, useMemo } from 'react';
 import Link from 'next/link';
 import { useWebSocket, type SystemStatus, type ControllerDetails, type ChargePlan, type ChargePlanSlot } from '../hooks/use-websocket';
 import { berechneStrompreis, getTarifstufe } from './strompreis';
+import { AirVent, BatteryCharging } from 'lucide-react';
 
 interface ForecastHour {
   timestamp: string;
@@ -1231,6 +1232,8 @@ export default function Dashboard() {
   const batterySoc = status?.battery?.soc ?? 0;
   const controller = status?.controller;
   const mpptTemperatureC = status?.mpptTemperatureC ?? null;
+  const heatPumpPowerW = status?.heatPumpPowerW ?? null;
+  const wallboxPowerW = status?.wallboxPowerW ?? null;
   const batteryCapacityKwh = status?.batteryCapacityKwh ?? 16;
 
   const actualFeedIn = useMemo(() => {
@@ -1343,7 +1346,23 @@ export default function Dashboard() {
 
         {/* Consumption */}
         <div className="rounded-xl border border-[var(--border)] bg-[var(--bg-card)] p-5">
-          <p className="text-sm text-[var(--text-secondary)] mb-1">Verbrauch</p>
+          <div className="flex justify-between items-start mb-1">
+            <p className="text-sm text-[var(--text-secondary)]">Verbrauch</p>
+            <div className="flex flex-col items-end gap-0.5">
+              {heatPumpPowerW !== null && (
+                <p className="text-xs text-[var(--text-secondary)] flex items-center gap-1" title="Wärmepumpe">
+                  <AirVent size={12} />
+                  {formatPower(heatPumpPowerW)}
+                </p>
+              )}
+              {wallboxPowerW !== null && wallboxPowerW > 0 && (
+                <p className="text-xs text-[var(--text-secondary)] flex items-center gap-1" title="Wallbox">
+                  <BatteryCharging size={12} />
+                  {formatPower(wallboxPowerW)}
+                </p>
+              )}
+            </div>
+          </div>
           <p className="text-3xl font-bold">{formatPower(consumption)}</p>
         </div>
 
