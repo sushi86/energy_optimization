@@ -16,6 +16,8 @@ export interface ServerOptions {
   pvSettingsPath?: string;
   inexogyService?: InexogyService;
   gridHistoryService?: GridHistoryService;
+  batteryHistoryService?: GridHistoryService;
+  consumptionHistoryService?: GridHistoryService;
 }
 
 export interface PriceEntry {
@@ -74,6 +76,8 @@ export function buildServer(options: ServerOptions = {}): FastifyInstance {
   const state = options.appState;
   const inexogyService = options.inexogyService;
   const gridHistoryService = options.gridHistoryService;
+  const batteryHistoryService = options.batteryHistoryService;
+  const consumptionHistoryService = options.consumptionHistoryService;
   const pvSettingsPath = options.pvSettingsPath ?? resolve(dirname(fileURLToPath(import.meta.url)), '../../../data/pv-settings.json');
 
   // WebSocket support
@@ -361,6 +365,40 @@ export function buildServer(options: ServerOptions = {}): FastifyInstance {
       return { date: '', slots: [] };
     }
     const slotsObj = gridHistoryService.getSlots(dateStr);
+    const slots = Object.entries(slotsObj)
+      .map(([time, slot]) => ({ time, ...slot }))
+      .sort((a, b) => a.time.localeCompare(b.time));
+    return { date: dateStr, slots };
+  });
+
+  app.get('/api/battery/history', async (request) => {
+    if (!batteryHistoryService) {
+      return { date: '', slots: [] };
+    }
+    const query = request.query as { date?: string };
+    const tz = 'Europe/Berlin';
+    const dateStr = query.date ?? new Date().toLocaleDateString('sv-SE', { timeZone: tz });
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(dateStr)) {
+      return { date: '', slots: [] };
+    }
+    const slotsObj = batteryHistoryService.getSlots(dateStr);
+    const slots = Object.entries(slotsObj)
+      .map(([time, slot]) => ({ time, ...slot }))
+      .sort((a, b) => a.time.localeCompare(b.time));
+    return { date: dateStr, slots };
+  });
+
+  app.get('/api/consumption/history', async (request) => {
+    if (!consumptionHistoryService) {
+      return { date: '', slots: [] };
+    }
+    const query = request.query as { date?: string };
+    const tz = 'Europe/Berlin';
+    const dateStr = query.date ?? new Date().toLocaleDateString('sv-SE', { timeZone: tz });
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(dateStr)) {
+      return { date: '', slots: [] };
+    }
+    const slotsObj = consumptionHistoryService.getSlots(dateStr);
     const slots = Object.entries(slotsObj)
       .map(([time, slot]) => ({ time, ...slot }))
       .sort((a, b) => a.time.localeCompare(b.time));

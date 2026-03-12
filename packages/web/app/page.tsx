@@ -557,12 +557,44 @@ function ChargePlanChart({ plan, hoveredSlot, setHoveredSlot, actualFeedIn, pric
   // Actual revenue from real feed-in
   let actualRevenueFixedCent = 0;
   let actualRevenueMarketCent = 0;
+  let actualNeg6hDeductionCent = 0;
+  let actualNeg6hActive = false;
   if (hasActual) {
+    // Per-hour revenue and price tracking for §51 rule
+    const hourRevenue = new Map<number, { revenueCent: number; negative: boolean }>();
     for (const [key, val] of actualFeedIn) {
-      actualRevenueFixedCent += val.feedInKwh * plan.feedInRateCentPerKwh;
       const [hStr, mStr] = key.split(':');
-      actualRevenueMarketCent += val.feedInKwh * findPriceForSlot(prices, parseInt(hStr), parseInt(mStr));
+      const hour = parseInt(hStr);
+      const priceCtkwh = findPriceForSlot(prices, hour, parseInt(mStr));
+      const revFixed = val.feedInKwh * plan.feedInRateCentPerKwh;
+      actualRevenueFixedCent += revFixed;
+      actualRevenueMarketCent += val.feedInKwh * priceCtkwh;
+      // Track per-hour for §51
+      const existing = hourRevenue.get(hour);
+      const isNeg = priceCtkwh < 0;
+      if (!existing) {
+        hourRevenue.set(hour, { revenueCent: revFixed, negative: isNeg });
+      } else {
+        existing.revenueCent += revFixed;
+        existing.negative = existing.negative && isNeg;
+      }
     }
+    // §51 EEG: detect 6+ consecutive hours of negative prices
+    const hours = Array.from(hourRevenue.entries()).sort((a, b) => a[0] - b[0]);
+    let streakStart = 0;
+    for (let i = 0; i <= hours.length; i++) {
+      const isNeg = i < hours.length && hours[i][1].negative;
+      if (!isNeg) {
+        if (i - streakStart >= 6) {
+          for (let j = streakStart; j < i; j++) {
+            actualNeg6hDeductionCent += hours[j][1].revenueCent;
+          }
+          actualNeg6hActive = true;
+        }
+        streakStart = i + 1;
+      }
+    }
+    actualRevenueFixedCent -= actualNeg6hDeductionCent;
   }
 
   // Dynamic Y-axis: snap to 3/6/9/12 kW based on max value in data
@@ -609,9 +641,17 @@ function ChargePlanChart({ plan, hoveredSlot, setHoveredSlot, actualFeedIn, pric
                 {actualTotalKwh.toLocaleString('de-DE', { maximumFractionDigits: 1 })} kWh
               </p>
             </div>
-            <div className="flex items-baseline gap-3 text-sm">
+            <div className="flex items-center gap-3 text-sm">
               <span className="text-[var(--text-secondary)]">
                 EEG: <span className="font-medium text-[var(--text-primary)]">{(actualRevenueFixedCent / 100).toLocaleString('de-DE', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}&euro;</span>
+                {actualNeg6hActive && (
+                  <span className="relative inline-block ml-1 group">
+                    <span className="inline-flex items-center justify-center w-4 h-4 rounded-full bg-yellow-500/20 text-yellow-400 text-[10px] font-bold cursor-help border border-yellow-500/30">i</span>
+                    <span className="absolute bottom-full right-0 mb-1 hidden group-hover:block w-56 p-2 text-xs text-[var(--text-primary)] bg-[var(--bg-secondary)] border border-[var(--border-primary)] rounded shadow-lg z-50">
+                      §51 EEG: Bei 6+ aufeinanderfolgenden Stunden mit negativen Börsenpreisen entfällt die Vergütung für diese Stunden (−{(actualNeg6hDeductionCent / 100).toLocaleString('de-DE', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}&euro;).
+                    </span>
+                  </span>
+                )}
               </span>
               <span className="text-[var(--text-secondary)]">
                 Börse: <span className="font-medium text-[var(--text-primary)]">{(actualRevenueMarketCent / 100).toLocaleString('de-DE', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}&euro;</span>
@@ -626,9 +666,17 @@ function ChargePlanChart({ plan, hoveredSlot, setHoveredSlot, actualFeedIn, pric
               {plan.totalFeedInKwh.toLocaleString('de-DE', { maximumFractionDigits: 1 })} kWh
             </p>
           </div>
-          <div className="flex items-baseline gap-3 text-sm">
+          <div className="flex items-center gap-3 text-sm">
             <span className="text-[var(--text-secondary)]">
               EEG: <span className="font-medium text-[var(--text-primary)]">{(plan.totalRevenueFixedCent / 100).toLocaleString('de-DE', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}&euro;</span>
+              {plan.negativeStreak6hActive && (
+                <span className="relative inline-block ml-1 group">
+                  <span className="inline-flex items-center justify-center w-4 h-4 rounded-full bg-yellow-500/20 text-yellow-400 text-[10px] font-bold cursor-help border border-yellow-500/30">i</span>
+                  <span className="absolute bottom-full right-0 mb-1 hidden group-hover:block w-56 p-2 text-xs text-[var(--text-primary)] bg-[var(--bg-secondary)] border border-[var(--border-primary)] rounded shadow-lg z-50">
+                    §51 EEG: Bei 6+ aufeinanderfolgenden Stunden mit negativen Börsenpreisen entfällt die Vergütung für diese Stunden (−{((plan.negativeStreak6hDeductionCent ?? 0) / 100).toLocaleString('de-DE', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}&euro;).
+                  </span>
+                </span>
+              )}
             </span>
             <span className="text-[var(--text-secondary)]">
               Börse: <span className="font-medium text-[var(--text-primary)]">{(plan.totalRevenueMarketCent / 100).toLocaleString('de-DE', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}&euro;</span>
@@ -723,11 +771,15 @@ function ChargePlanChart({ plan, hoveredSlot, setHoveredSlot, actualFeedIn, pric
           {TIME_GRID.map((slot, i) => {
             const h = slotByKey.get(slot.key);
             const chargeW = h?.chargePowerW ?? 0;
+            const clippingW = Math.min(h?.clippingW ?? 0, chargeW); // clipping portion of charge
+            const voluntaryW = Math.max(0, chargeW - clippingW);
             const isPast = slot.key < nowKey;
             const actual = actualFeedIn.get(slot.key);
             // For past slots: use actual feed-in if available
             const feedInW = (isPast && actual) ? actual.feedInW : (h?.feedInPowerW ?? 0);
-            const chargePct = (chargeW / maxPower) * 100;
+            const clippingPct = (clippingW / maxPower) * 100;
+            const voluntaryPct = (voluntaryW / maxPower) * 100;
+            const chargePct = clippingPct + voluntaryPct;
             const feedInPct = (feedInW / maxPower) * 100;
             const totalPct = chargePct + feedInPct;
             const isHovered = hoveredSlot === i;
@@ -747,6 +799,7 @@ function ChargePlanChart({ plan, hoveredSlot, setHoveredSlot, actualFeedIn, pric
                     {chargeW > 0 && <>
                       {' · '}
                       <span className="text-blue-400">Laden: {formatPower(chargeW)}</span>
+                      {clippingW > 0 && <span className="text-yellow-400"> ({formatPower(clippingW)} Clipping)</span>}
                     </>}
                     {feedInW > 0 && <>
                       {' · '}
@@ -783,13 +836,27 @@ function ChargePlanChart({ plan, hoveredSlot, setHoveredSlot, actualFeedIn, pric
                         }}
                       />
                     )}
-                    {chargeW > 0 && (
+                    {voluntaryW > 0 && (
+                      <div
+                        className="absolute w-full transition-opacity"
+                        style={{
+                          bottom: totalPct > 0 ? `${((feedInPct + clippingPct) / totalPct) * 100}%` : '0%',
+                          height: totalPct > 0 ? `${(voluntaryPct / totalPct) * 100}%` : '0%',
+                          backgroundColor: '#3b82f6',
+                          opacity: isPast ? 0.15 : dimmed ? 0.2 : isCurrent ? 1 : 0.8,
+                          minHeight: '2px',
+                          outline: isCurrent ? '1.5px solid white' : 'none',
+                          borderRadius: clippingW > 0 ? '0' : '2px 2px 0 0',
+                        }}
+                      />
+                    )}
+                    {clippingW > 0 && (
                       <div
                         className="absolute w-full rounded-t transition-opacity"
                         style={{
                           bottom: totalPct > 0 ? `${(feedInPct / totalPct) * 100}%` : '0%',
-                          height: totalPct > 0 ? `${(chargePct / totalPct) * 100}%` : '0%',
-                          backgroundColor: '#3b82f6',
+                          height: totalPct > 0 ? `${(clippingPct / totalPct) * 100}%` : '0%',
+                          backgroundColor: '#eab308',
                           opacity: isPast ? 0.15 : dimmed ? 0.2 : isCurrent ? 1 : 0.8,
                           minHeight: '2px',
                           outline: isCurrent ? '1.5px solid white' : 'none',
@@ -820,6 +887,7 @@ function ChargePlanChart({ plan, hoveredSlot, setHoveredSlot, actualFeedIn, pric
       {/* Legend */}
       <div className="flex items-center gap-4 text-[10px] text-[var(--text-secondary)] mt-2">
         <span className="flex items-center gap-1"><span className="inline-block w-2 h-2 rounded-sm bg-[#3b82f6]" /> Laden</span>
+        <span className="flex items-center gap-1"><span className="inline-block w-2 h-2 rounded-sm bg-[#eab308]" /> Clipping</span>
         <span className="flex items-center gap-1"><span className="inline-block w-2 h-2 rounded-sm bg-[#22c55e]" /> Einspeisung</span>
         <span className="flex items-center gap-1"><span className="inline-block w-2 h-2 rounded-full" style={{ width: '6px', height: '6px', backgroundColor: '#10EFD8' }} /> SOC</span>
       </div>

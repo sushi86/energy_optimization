@@ -37,6 +37,7 @@ export interface ChargePlanSlot {
   estimatedSoc: number;
   revenueFixedCent: number;
   revenueMarketCent: number;
+  clippingW: number;
 }
 
 export interface ChargePlan {
@@ -49,6 +50,8 @@ export interface ChargePlan {
   estimatedFullHour: number | null;
   currentSoc: number;
   forecastCorrectionFactor: number;
+  negativeStreak6hActive?: boolean;
+  negativeStreak6hDeductionCent?: number;
 }
 
 export interface SystemStatus {

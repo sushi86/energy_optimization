@@ -2,6 +2,13 @@ import type { SystemState } from './mqtt-service.js';
 import type { Forecast } from './vrm-service.js';
 import type { ChargePlan, ChargePlanSlot } from './charge-plan.js';
 
+/** Format watts for display: ≥1000 → "10.7 kW", else "950 W" */
+function fmtW(w: number): string {
+  return Math.abs(w) >= 1000
+    ? `${(w / 1000).toFixed(1)} kW`
+    : `${Math.round(w)} W`;
+}
+
 export interface PriceEntry {
   timestamp: number;  // unix seconds
   price: number | null;
@@ -87,7 +94,7 @@ export class Controller {
 
   handleExternalSetpointChange(valueW: number): void {
     if (this.mode !== 'manual') {
-      console.log(`[controller] External setpoint change detected (${valueW}W) — switching from ${this.mode} to manual`);
+      console.log(`[controller] External setpoint change detected (${fmtW(valueW)}) — switching from ${this.mode} to manual`);
     }
     this.mode = 'manual';
     this.lastAppliedSetpoint = valueW;
@@ -153,7 +160,7 @@ export class Controller {
         return {
           setpointW: roundTo50(setpoint),
           mode: 'auto',
-          reason: `Battery ${state.batterySoc >= 99 ? `at ${Math.round(state.batterySoc)}%` : 'full'} — high PV, limiting charge to ${limitedChargeW}W`,
+          reason: `Battery ${state.batterySoc >= 99 ? `at ${Math.round(state.batterySoc)}%` : 'full'} — high PV, limiting charge to ${fmtW(limitedChargeW)}`,
           details: {
             currentSurplusW,
             desiredChargePowerW: limitedChargeW,
@@ -165,11 +172,11 @@ export class Controller {
             earlyClippingOverride: false,
             batterySoc: state.batterySoc,
             targetSocPercent,
-            goal: `Batterie voll — hohe PV-Leistung, Ladung auf ${limitedChargeW}W begrenzt, Rest einspeisen`,
+            goal: `Batterie voll — hohe PV-Leistung, Ladung auf ${fmtW(limitedChargeW)} begrenzt, Rest einspeisen`,
             forcedChargeKwh: 0,
             voluntaryChargeKwh: 0,
             clippingHours: 0,
-            strategy: `Batterie voll bei hoher PV — ${(limitedChargeW / 1000).toFixed(0)} kW Erhaltungsladung, ${(feedInW / 1000).toFixed(1)} kW einspeisen`,
+            strategy: `Batterie voll bei hoher PV — ${fmtW(limitedChargeW)} Erhaltungsladung, ${fmtW(feedInW)} einspeisen`,
           },
         };
       }
@@ -260,7 +267,7 @@ export class Controller {
 
         const now = new Date();
         const plannedSurplusW = currentSlot.chargePowerW + currentSlot.feedInPowerW;
-        const strategy = `Ladeplan: ${Math.round(desiredChargePowerW)}W laden, ${Math.round(feedInW)}W einspeisen (Plan: ${currentSlot.chargePowerW}W/${currentSlot.feedInPowerW}W, Überschuss ${Math.round(currentSurplusW)}/${plannedSurplusW}W)`;
+        const strategy = `Ladeplan: ${fmtW(desiredChargePowerW)} laden, ${fmtW(feedInW)} einspeisen (Plan: ${fmtW(currentSlot.chargePowerW)}/${fmtW(currentSlot.feedInPowerW)}, Überschuss ${fmtW(currentSurplusW)}/${fmtW(plannedSurplusW)})`;
 
         const details: ControllerDetails = {
           currentSurplusW: Math.round(currentSurplusW),
@@ -273,7 +280,7 @@ export class Controller {
           earlyClippingOverride: false,
           batterySoc: Math.round(state.batterySoc),
           targetSocPercent,
-          goal: `Ladeplan folgen — ${currentSlot.timestamp.slice(11, 16)}: ${Math.round(desiredChargePowerW)}W laden, ${Math.round(feedInW)}W einspeisen`,
+          goal: `Ladeplan folgen — ${currentSlot.timestamp.slice(11, 16)}: ${fmtW(desiredChargePowerW)} laden, ${fmtW(feedInW)} einspeisen`,
           forcedChargeKwh: 0,
           voluntaryChargeKwh: 0,
           clippingHours: 0,
@@ -287,7 +294,7 @@ export class Controller {
           const correction = Math.abs(state.batteryPower) + desiredChargePowerW;
           correctedSetpoint = setpoint + correction;
           correctedSetpoint = Math.min(correctedSetpoint, 0);
-          details.goal = `KORREKTUR: Batterie entlädt mit ${Math.abs(state.batteryPower)}W statt ${Math.round(desiredChargePowerW)}W zu laden — Einspeisung reduzieren`;
+          details.goal = `KORREKTUR: Batterie entlädt mit ${fmtW(Math.abs(state.batteryPower))} statt ${fmtW(desiredChargePowerW)} zu laden — Einspeisung reduzieren`;
         }
 
         // Deadband
@@ -297,7 +304,7 @@ export class Controller {
             return {
               setpointW: this.lastAppliedSetpoint,
               mode: 'auto',
-              reason: `Im deadband (${diff.toFixed(0)}W < ${this.config.deadbandW}W), Sollwert beibehalten`,
+              reason: `Im deadband (${diff.toFixed(0)} W < ${this.config.deadbandW} W), Sollwert beibehalten`,
               details,
             };
           }
@@ -306,7 +313,7 @@ export class Controller {
         return {
           setpointW: roundTo50(correctedSetpoint),
           mode: 'auto',
-          reason: `Ladeplan: Einspeisung ${Math.abs(roundTo50(correctedSetpoint))}W, Ladung ${Math.round(desiredChargePowerW)}W`,
+          reason: `Ladeplan: Einspeisung ${fmtW(Math.abs(roundTo50(correctedSetpoint)))}, Ladung ${fmtW(desiredChargePowerW)}`,
           details,
         };
       }
@@ -415,10 +422,10 @@ export class Controller {
     const setpoint = feedIn > 0 ? -feedIn : 0;
 
     const goal = isClippingRisk
-      ? `Clipping vermeiden — PV ${Math.round(state.pvPower)}W > AC-Limit ${maxAcPowerW}W, Batterie absorbiert ${Math.round(desiredChargePowerW)}W (davon ${Math.round(antiClipChargeW)}W Anti-Clip)`
+      ? `Clipping vermeiden — PV ${fmtW(state.pvPower)} > AC-Limit ${fmtW(maxAcPowerW)}, Batterie absorbiert ${fmtW(desiredChargePowerW)} (davon ${fmtW(antiClipChargeW)} Anti-Clip)`
       : isFeedInHour
-        ? `Einspeisestunde — alles ins Netz (${Math.round(feedIn)}W), Batterie laden in günstigeren Stunden`
-        : `Batterie laden mit ${Math.round(desiredChargePowerW)}W (${batteryNeedKwh.toFixed(1)} kWh in ${effectiveHours.toFixed(1)}h, ${remainingHours.toFixed(1)}h PV übrig), Rest einspeisen`;
+        ? `Einspeisestunde — alles ins Netz (${fmtW(feedIn)}), Batterie laden in günstigeren Stunden`
+        : `Batterie laden mit ${fmtW(desiredChargePowerW)} (${batteryNeedKwh.toFixed(1)} kWh in ${effectiveHours.toFixed(1)}h, ${remainingHours.toFixed(1)}h PV übrig), Rest einspeisen`;
 
     const details: ControllerDetails = {
       currentSurplusW: Math.round(currentSurplusW),
@@ -457,7 +464,7 @@ export class Controller {
       const correction = Math.abs(state.batteryPower) + desiredChargePowerW;
       correctedSetpoint = setpoint + correction; // setpoint is negative, so adding makes it less negative
       correctedSetpoint = Math.min(correctedSetpoint, 0); // never request grid import
-      details.goal = `KORREKTUR: Batterie entlädt mit ${Math.abs(state.batteryPower)}W statt ${Math.round(desiredChargePowerW)}W zu laden — Einspeisung reduzieren`;
+      details.goal = `KORREKTUR: Batterie entlädt mit ${fmtW(Math.abs(state.batteryPower))} statt ${fmtW(desiredChargePowerW)} zu laden — Einspeisung reduzieren`;
     }
 
     // Deadband — skip when:
@@ -470,7 +477,7 @@ export class Controller {
         return {
           setpointW: this.lastAppliedSetpoint,
           mode: 'auto',
-          reason: `Im deadband (${diff.toFixed(0)}W < ${deadbandW}W), Sollwert beibehalten`,
+          reason: `Im deadband (${diff.toFixed(0)} W < ${deadbandW} W), Sollwert beibehalten`,
           details,
         };
       }
@@ -479,7 +486,7 @@ export class Controller {
     return {
       setpointW: roundTo50(correctedSetpoint),
       mode: 'auto',
-      reason: `Einspeisung ${Math.abs(roundTo50(correctedSetpoint))}W, Ladung ${Math.round(desiredChargePowerW)}W (${batteryNeedKwh.toFixed(1)} kWh in ${effectiveHours.toFixed(1)}h)`,
+      reason: `Einspeisung ${fmtW(Math.abs(roundTo50(correctedSetpoint)))}, Ladung ${fmtW(desiredChargePowerW)} (${batteryNeedKwh.toFixed(1)} kWh in ${effectiveHours.toFixed(1)}h)`,
       details,
     };
   }

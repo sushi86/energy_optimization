@@ -43,11 +43,15 @@ async function main() {
 
   const dataDir = resolve(__dirname, '../../../data');
   const gridHistoryService = new GridHistoryService(resolve(dataDir, 'grid-history'));
+  const batteryHistoryService = new GridHistoryService(resolve(dataDir, 'battery-history'));
+  const consumptionHistoryService = new GridHistoryService(resolve(dataDir, 'consumption-history'));
 
-  // Record grid power on every MQTT state change
+  // Record power values on every MQTT state change
   appState.mqtt.on('stateChange', () => {
     const s = appState.mqtt.getState();
     gridHistoryService.recordSample(s.gridPower);
+    batteryHistoryService.recordSample(s.batteryPower);
+    consumptionHistoryService.recordSample(s.consumptionPower);
   });
 
   let inexogyService: InexogyService | undefined;
@@ -60,7 +64,7 @@ async function main() {
     console.log('[energy-control] inexogy smart meter enabled');
   }
 
-  const server = buildServer({ appState, inexogyService, gridHistoryService });
+  const server = buildServer({ appState, inexogyService, gridHistoryService, batteryHistoryService, consumptionHistoryService });
   await server.listen({ port: 3002, host: '0.0.0.0' });
 
   console.log('[energy-control] Server running on http://0.0.0.0:3002');
@@ -70,6 +74,8 @@ async function main() {
     await server.close();
     await appState.stop();
     gridHistoryService.stop();
+    batteryHistoryService.stop();
+    consumptionHistoryService.stop();
     process.exit(0);
   };
 

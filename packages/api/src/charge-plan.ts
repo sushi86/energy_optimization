@@ -29,6 +29,7 @@ export interface ChargePlanSlot {
   estimatedSoc: number;
   revenueFixedCent: number;
   revenueMarketCent: number;
+  clippingW: number;
 }
 
 export interface ChargePlan {
@@ -41,6 +42,10 @@ export interface ChargePlan {
   estimatedFullHour: number | null;
   currentSoc: number;
   forecastCorrectionFactor: number;
+  /** EEG §51: true when 6+ consecutive hours of negative prices reduce compensation */
+  negativeStreak6hActive: boolean;
+  /** Cents deducted from EEG revenue due to §51 negative price streak rule */
+  negativeStreak6hDeductionCent: number;
 }
 
 /** Find the price entry matching a given unix timestamp (floored to 15min). */
@@ -287,18 +292,70 @@ export function computeChargePlan(
       estimatedSoc: Math.round(soc * 10) / 10,
       revenueFixedCent: Math.round(revenueFixedCent * 100) / 100,
       revenueMarketCent: Math.round(revenueMarketCent * 100) / 100,
+      clippingW: Math.round(s.clippingW),
     });
   }
+
+  // --- EEG §51: No compensation during 6+ consecutive hours of negative prices ---
+  // Group slots by hour and check for consecutive negative-price hours.
+  // For any streak of ≥6 hours, deduct the EEG fixed revenue of those slots.
+  let negativeStreak6hDeductionCent = 0;
+  if (slots.length > 0) {
+    // Build a map of hour → { hasNegativePrice, revenueFixedCent }
+    const hourMap = new Map<number, { negative: boolean; revenueCent: number }>();
+    for (let i = 0; i < analysis.length; i++) {
+      const hourKey = analysis[i].timestamp.getHours();
+      const existing = hourMap.get(hourKey);
+      const slotRevenue = slots[i].revenueFixedCent;
+      if (!existing) {
+        hourMap.set(hourKey, {
+          negative: analysis[i].price != null && analysis[i].price! < 0,
+          revenueCent: slotRevenue,
+        });
+      } else {
+        // All slots in the hour must have negative prices for the hour to count
+        existing.negative = existing.negative && (analysis[i].price != null && analysis[i].price! < 0);
+        existing.revenueCent += slotRevenue;
+      }
+    }
+
+    // Get hours in chronological order and find streaks of ≥6 consecutive negative hours
+    const hours = Array.from(hourMap.entries())
+      .sort((a, b) => {
+        // Sort by actual timestamp order, not just hour number (handles day boundary)
+        const aIdx = analysis.findIndex(s => s.timestamp.getHours() === a[0]);
+        const bIdx = analysis.findIndex(s => s.timestamp.getHours() === b[0]);
+        return aIdx - bIdx;
+      });
+
+    let streakStart = 0;
+    for (let i = 0; i <= hours.length; i++) {
+      const isNeg = i < hours.length && hours[i][1].negative;
+      if (!isNeg) {
+        const streakLen = i - streakStart;
+        if (streakLen >= 6) {
+          for (let j = streakStart; j < i; j++) {
+            negativeStreak6hDeductionCent += hours[j][1].revenueCent;
+          }
+        }
+        streakStart = i + 1;
+      }
+    }
+  }
+
+  const adjustedRevenueFixedCent = totalRevenueFixedCent - negativeStreak6hDeductionCent;
 
   return {
     slots,
     intervalMinutes: 15,
     totalFeedInKwh: Math.round(totalFeedInKwh * 1000) / 1000,
-    totalRevenueFixedCent: Math.round(totalRevenueFixedCent * 100) / 100,
+    totalRevenueFixedCent: Math.round(adjustedRevenueFixedCent * 100) / 100,
     totalRevenueMarketCent: Math.round(totalRevenueMarketCent * 100) / 100,
     feedInRateCentPerKwh,
     estimatedFullHour,
     currentSoc,
     forecastCorrectionFactor: Math.round(forecastCorrectionFactor * 100) / 100,
+    negativeStreak6hActive: negativeStreak6hDeductionCent > 0,
+    negativeStreak6hDeductionCent: Math.round(negativeStreak6hDeductionCent * 100) / 100,
   };
 }

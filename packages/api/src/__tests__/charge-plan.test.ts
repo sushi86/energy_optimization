@@ -320,6 +320,65 @@ describe('computeChargePlan', () => {
     expect(lastSocWithFlag).toBe(100);
   });
 
+  it('§51 EEG: deducts fixed revenue for 6+ consecutive negative-price hours', () => {
+    // 8 hours of production, all with negative prices → streak of 8 ≥ 6
+    const powers = Array(8).fill(8000);
+    const forecast = makeForecast(powers, 8);
+    const base = futureBase();
+    base.setHours(base.getHours() + 8);
+    const prices: PriceEntry[] = [];
+    for (let h = 0; h < 8; h++) {
+      for (let q = 0; q < 4; q++) {
+        prices.push({
+          timestamp: Math.floor(base.getTime() / 1000) + h * 3600 + q * 900,
+          price: -20,
+        });
+      }
+    }
+    const config = makeConfig({
+      currentSoc: 95,
+      targetSocPercent: 100,
+      feedInRateCentPerKwh: 7,
+      allowFeedInNegativePrice: true, // allow feed-in so there IS revenue to deduct
+    });
+
+    const plan = computeChargePlan(forecast, prices, config);
+
+    expect(plan.negativeStreak6hActive).toBe(true);
+    expect(plan.negativeStreak6hDeductionCent).toBeGreaterThan(0);
+    // Total fixed revenue should be reduced by the deduction
+    expect(plan.totalRevenueFixedCent).toBeLessThan(plan.totalFeedInKwh * 7);
+  });
+
+  it('§51 EEG: no deduction when negative streak is less than 6 hours', () => {
+    // 5 hours of negative prices (< 6, so no deduction)
+    const powers = Array(5).fill(8000);
+    const forecast = makeForecast(powers, 8);
+    const base = futureBase();
+    base.setHours(base.getHours() + 8);
+    const prices: PriceEntry[] = [];
+    for (let h = 0; h < 5; h++) {
+      for (let q = 0; q < 4; q++) {
+        prices.push({
+          timestamp: Math.floor(base.getTime() / 1000) + h * 3600 + q * 900,
+          price: -20,
+        });
+      }
+    }
+    const config = makeConfig({
+      currentSoc: 95,
+      targetSocPercent: 100,
+      feedInRateCentPerKwh: 7,
+      allowFeedInNegativePrice: true,
+    });
+
+    const plan = computeChargePlan(forecast, prices, config);
+
+    expect(plan.negativeStreak6hActive).toBe(false);
+    expect(plan.negativeStreak6hDeductionCent).toBe(0);
+    expect(plan.totalRevenueFixedCent).toBeCloseTo(plan.totalFeedInKwh * 7, 1);
+  });
+
   it('charges to minSoc before feeding in when SOC is below safety minimum', () => {
     const forecast = makeForecast([5000, 5000, 5000, 5000], 7);
     const prices = makePrices(0, 24, 150); // expensive prices
