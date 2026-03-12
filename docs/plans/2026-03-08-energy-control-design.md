@@ -56,7 +56,7 @@ energy_control/
 
 ### MQTT (Victron) — Realtime
 
-Broker: `tcp://192.168.1.224:1883`, Device-ID: `c0619ab5450c`
+Broker: `tcp://your-victron-ip:1883`, Device-ID: `your-device-id`
 
 **Lesen (Prefix `N/{deviceId}/`):**
 - `system/0/Dc/Pv/Power` — PV-Leistung (W)
@@ -200,8 +200,8 @@ Nur zwei externe Abhängigkeiten, beide mockbar:
 Umgebungsvariablen:
 ```
 # Victron MQTT
-VICTRON_MQTT_URL=tcp://192.168.1.224:1883
-VICTRON_DEVICE_ID=c0619ab5450c
+VICTRON_MQTT_URL=tcp://your-victron-ip:1883
+VICTRON_DEVICE_ID=your-device-id
 
 # Victron VRM
 VICTRON_VRM_TOKEN=<token>

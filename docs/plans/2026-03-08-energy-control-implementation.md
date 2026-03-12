@@ -82,8 +82,8 @@ dist/
 `.env.example`:
 ```bash
 # Victron MQTT
-VICTRON_MQTT_URL=tcp://192.168.1.224:1883
-VICTRON_DEVICE_ID=c0619ab5450c
+VICTRON_MQTT_URL=tcp://your-victron-ip:1883
+VICTRON_DEVICE_ID=your-device-id
 
 # Victron VRM
 VICTRON_VRM_TOKEN=your-vrm-token
@@ -574,8 +574,8 @@ describe('loadConfig', () => {
     process.env.VICTRON_VRM_TOKEN = 'test-token';
     process.env.VICTRON_VRM_SITE_ID = 'test-site';
     const config = loadConfig();
-    expect(config.VICTRON_MQTT_URL).toBe('tcp://192.168.1.224:1883');
-    expect(config.VICTRON_DEVICE_ID).toBe('c0619ab5450c');
+    expect(config.VICTRON_MQTT_URL).toBe('tcp://your-victron-ip:1883');
+    expect(config.VICTRON_DEVICE_ID).toBe('your-device-id');
     expect(config.BATTERY_CAPACITY_KWH).toBe(16);
     expect(config.MIN_SOC_PERCENT).toBe(20);
     expect(config.TARGET_SOC_PERCENT).toBe(100);
@@ -616,8 +616,8 @@ Expected: FAIL — `loadConfig` not found
 import { z } from 'zod';
 
 const configSchema = z.object({
-  VICTRON_MQTT_URL: z.string().default('tcp://192.168.1.224:1883'),
-  VICTRON_DEVICE_ID: z.string().default('c0619ab5450c'),
+  VICTRON_MQTT_URL: z.string().default('tcp://your-victron-ip:1883'),
+  VICTRON_DEVICE_ID: z.string().default('your-device-id'),
   VICTRON_VRM_TOKEN: z.string().min(1),
   VICTRON_VRM_SITE_ID: z.string().min(1),
   BATTERY_CAPACITY_KWH: z.coerce.number().default(16),

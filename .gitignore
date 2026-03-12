@@ -8,3 +8,5 @@ data/
 config-overrides.json
 .DS_Store
 .claude
+.stoneforge/
+AGENTS.md
