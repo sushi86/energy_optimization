@@ -43,4 +43,18 @@ describe('loadConfig', () => {
     delete process.env.VICTRON_VRM_SITE_ID;
     expect(() => loadConfig()).toThrow();
   });
+
+  it('loads fine without optional nibe and wallbox fields', () => {
+    process.env.VICTRON_VRM_TOKEN = 'test-token';
+    process.env.VICTRON_VRM_SITE_ID = 'test-site';
+    delete process.env.NIBE_URL;
+    delete process.env.NIBE_USERNAME;
+    delete process.env.NIBE_PASSWORD;
+    delete process.env.WALLBOX_URL;
+    const config = loadConfig();
+    expect(config.NIBE_URL).toBeUndefined();
+    expect(config.NIBE_USERNAME).toBeUndefined();
+    expect(config.NIBE_PASSWORD).toBeUndefined();
+    expect(config.WALLBOX_URL).toBeUndefined();
+  });
 });
