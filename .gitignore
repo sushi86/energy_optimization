@@ -1,0 +1,12 @@
+node_modules/
+dist/
+.next/
+.env
+*.tsbuildinfo
+
+data/
+.DS_Store
+.claude
+.stoneforge
+AGENTS.md
+/.stoneforge/.worktrees/

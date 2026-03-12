@@ -1,0 +1,247 @@
+openapi: 3.1.0
+info:
+  title: Energy Control API
+  version: 0.1.0
+  description: Intelligent grid setpoint controller for Victron solar systems
+paths:
+  /api/health:
+    get:
+      operationId: getHealth
+      summary: Health check
+      responses:
+        '200':
+          description: Service is healthy
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HealthResponse'
+
+  /api/status:
+    get:
+      operationId: getStatus
+      summary: Current system status with live values and controller state
+      responses:
+        '200':
+          description: Current system status
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SystemStatus'
+
+  /api/forecast:
+    get:
+      operationId: getForecast
+      summary: Today's solar forecast (hourly)
+      responses:
+        '200':
+          description: Forecast data
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ForecastResponse'
+
+  /api/config:
+    get:
+      operationId: getConfig
+      summary: Current controller configuration
+      responses:
+        '200':
+          description: Current config
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ControllerConfig'
+    put:
+      operationId: updateConfig
+      summary: Update controller configuration
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ControllerConfig'
+      responses:
+        '200':
+          description: Updated config
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ControllerConfig'
+
+  /api/controller/mode:
+    post:
+      operationId: setControllerMode
+      summary: Switch controller mode (auto/manual/winter)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SetModeRequest'
+      responses:
+        '200':
+          description: Mode updated
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SystemStatus'
+
+  /api/controller/setpoint:
+    put:
+      operationId: setManualSetpoint
+      summary: Set manual grid setpoint (only in manual mode)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SetSetpointRequest'
+      responses:
+        '200':
+          description: Setpoint updated
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SystemStatus'
+        '409':
+          description: Not in manual mode
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+components:
+  schemas:
+    HealthResponse:
+      type: object
+      required: [status]
+      properties:
+        status:
+          type: string
+          enum: [ok]
+
+    ControllerMode:
+      type: string
+      enum: [auto, manual, winter]
+
+    SystemStatus:
+      type: object
+      required: [pv, grid, battery, consumption, controller, timestamp]
+      properties:
+        pv:
+          type: object
+          required: [power]
+          properties:
+            power:
+              type: number
+              description: Current PV power in watts
+        grid:
+          type: object
+          required: [power, setpoint]
+          properties:
+            power:
+              type: number
+              description: Current grid power in watts (negative = feed-in)
+            setpoint:
+              type: number
+              description: Current grid setpoint in watts
+        battery:
+          type: object
+          required: [power, soc]
+          properties:
+            power:
+              type: number
+              description: Battery power in watts (positive = charging)
+            soc:
+              type: number
+              description: State of charge in percent (0-100)
+        consumption:
+          type: object
+          required: [power]
+          properties:
+            power:
+              type: number
+              description: Total consumption in watts
+        controller:
+          type: object
+          required: [mode, activeSetpoint]
+          properties:
+            mode:
+              $ref: '#/components/schemas/ControllerMode'
+            activeSetpoint:
+              type: number
+              description: Currently active grid setpoint in watts
+            reason:
+              type: string
+              description: Human-readable reason for current setpoint
+        timestamp:
+          type: string
+          format: date-time
+
+    ControllerConfig:
+      type: object
+      required: [batteryCapacityKwh, minSocPercent, targetSocPercent, maxAcPowerW, winterModeThresholdFactor, regulationIntervalMs, largeChangeThresholdW, deadbandW]
+      properties:
+        batteryCapacityKwh:
+          type: number
+        minSocPercent:
+          type: number
+        targetSocPercent:
+          type: number
+        maxAcPowerW:
+          type: number
+        winterModeThresholdFactor:
+          type: number
+        regulationIntervalMs:
+          type: number
+        largeChangeThresholdW:
+          type: number
+        deadbandW:
+          type: number
+
+    ForecastHour:
+      type: object
+      required: [timestamp, powerW]
+      properties:
+        timestamp:
+          type: string
+          format: date-time
+        powerW:
+          type: number
+          description: Forecasted power in watts for this hour
+
+    ForecastResponse:
+      type: object
+      required: [hours, totalKwh, winterModeActive]
+      properties:
+        hours:
+          type: array
+          items:
+            $ref: '#/components/schemas/ForecastHour'
+        totalKwh:
+          type: number
+          description: Total forecasted production for the day in kWh
+        winterModeActive:
+          type: boolean
+          description: Whether winter mode threshold is met
+
+    SetModeRequest:
+      type: object
+      required: [mode]
+      properties:
+        mode:
+          $ref: '#/components/schemas/ControllerMode'
+
+    SetSetpointRequest:
+      type: object
+      required: [setpointW]
+      properties:
+        setpointW:
+          type: number
+
+    ErrorResponse:
+      type: object
+      required: [error]
+      properties:
+        error:
+          type: string

@@ -1,0 +1,13 @@
+{
+  "name": "energy-control",
+  "private": true,
+  "scripts": {
+    "dev": "concurrently -n api,web -c cyan,magenta \"pnpm --filter @energy-control/api dev\" \"pnpm --filter @energy-control/web dev\"",
+    "build": "pnpm -r build",
+    "test": "pnpm --filter @energy-control/api test",
+    "generate:types": "pnpm --filter @energy-control/shared generate"
+  },
+  "devDependencies": {
+    "concurrently": "^9.2.1"
+  }
+}

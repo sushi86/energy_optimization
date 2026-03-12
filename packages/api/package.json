@@ -1,0 +1,30 @@
+{
+  "name": "@energy-control/api",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "main": "dist/index.js",
+  "scripts": {
+    "dev": "tsx --watch src/index.ts",
+    "build": "tsc",
+    "start": "node dist/index.js",
+    "test": "vitest"
+  },
+  "dependencies": {
+    "@energy-control/shared": "workspace:*",
+    "@fastify/websocket": "^11.0.0",
+    "dotenv": "^17.2.4",
+    "fastify": "^5.0.0",
+    "mqtt": "^5.10.0",
+    "ws": "^8.19.0",
+    "zod": "^3.24.0"
+  },
+  "devDependencies": {
+    "@types/node": "^22.0.0",
+    "@types/ws": "^8.18.1",
+    "aedes": "^0.51.0",
+    "tsx": "^4.19.0",
+    "typescript": "^5.7.0",
+    "vitest": "^3.0.0"
+  }
+}

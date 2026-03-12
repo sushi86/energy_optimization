@@ -1,0 +1,23 @@
+{
+  "name": "@energy-control/shared",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "exports": {
+    ".": {
+      "import": "./dist/index.js",
+      "types": "./dist/index.d.ts"
+    }
+  },
+  "scripts": {
+    "build": "openapi-typescript ../../openapi/spec.yaml -o src/api-types.ts && tsc",
+    "generate": "openapi-typescript ../../openapi/spec.yaml -o src/api-types.ts",
+    "dev": "tsc --watch"
+  },
+  "devDependencies": {
+    "openapi-typescript": "^7.0.0",
+    "typescript": "^5.7.0"
+  }
+}

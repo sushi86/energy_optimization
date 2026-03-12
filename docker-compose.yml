@@ -1,0 +1,26 @@
+services:
+  energy-control-api:
+    build:
+      context: .
+      dockerfile: packages/api/Dockerfile
+    network_mode: host
+    env_file: .env
+    environment:
+      - TZ=Europe/Berlin
+    restart: unless-stopped
+    volumes:
+      - energy-data:/app/data
+
+  energy-control-web:
+    build:
+      context: .
+      dockerfile: packages/web/Dockerfile
+    network_mode: host
+    environment:
+      - TZ=Europe/Berlin
+    depends_on:
+      - energy-control-api
+    restart: unless-stopped
+
+volumes:
+  energy-data:
