@@ -11,6 +11,8 @@ import type { InexogyService } from './inexogy-service.js';
 import type { GridHistoryService } from './grid-history-service.js';
 import type { NibePoller } from './nibe-poller.js';
 import type { WallboxPoller } from './wallbox-poller.js';
+import type { PushService } from './push-service.js';
+import { getVapidPublicKey } from './vapid.js';
 
 export interface ServerOptions {
   testing?: boolean;
@@ -23,6 +25,7 @@ export interface ServerOptions {
   socHistoryService?: GridHistoryService;
   nibePoller?: NibePoller;
   wallboxPoller?: WallboxPoller;
+  pushService?: PushService;
 }
 
 export interface PriceEntry {
@@ -86,6 +89,7 @@ export function buildServer(options: ServerOptions = {}): FastifyInstance {
   const socHistoryService = options.socHistoryService;
   const nibePoller = options.nibePoller;
   const wallboxPoller = options.wallboxPoller;
+  const pushService = options.pushService;
   const pvSettingsPath = options.pvSettingsPath ?? resolve(dirname(fileURLToPath(import.meta.url)), '../../../data/pv-settings.json');
 
   // WebSocket support
@@ -439,6 +443,120 @@ export function buildServer(options: ServerOptions = {}): FastifyInstance {
     } catch (err) {
       return reply.code(502).send({ error: (err as Error).message });
     }
+  });
+
+  // --- Push notification endpoints ---
+
+  app.get('/api/push/vapid-key', async (_request, reply) => {
+    try {
+      return { publicKey: getVapidPublicKey() };
+    } catch {
+      return reply.code(500).send({ error: 'VAPID not initialized' });
+    }
+  });
+
+  app.post('/api/push/subscribe', async (request, reply) => {
+    if (!pushService) return reply.code(503).send({ error: 'Push not configured' });
+    const subscription = request.body as { endpoint: string; keys: { p256dh: string; auth: string } };
+    if (!subscription?.endpoint || !subscription?.keys?.p256dh || !subscription?.keys?.auth) {
+      return reply.code(400).send({ error: 'Invalid subscription' });
+    }
+    pushService.subscribe(subscription);
+    return { ok: true };
+  });
+
+  app.delete('/api/push/subscribe', async (request, reply) => {
+    if (!pushService) return reply.code(503).send({ error: 'Push not configured' });
+    const { endpoint } = request.body as { endpoint: string };
+    if (!endpoint) return reply.code(400).send({ error: 'Missing endpoint' });
+    pushService.unsubscribe(endpoint);
+    return { ok: true };
+  });
+
+  app.post('/api/push/test', async (_request, reply) => {
+    if (!pushService) return reply.code(503).send({ error: 'Push not configured' });
+    await pushService.sendNotification({
+      title: 'Energy Control',
+      body: 'Test-Notification erfolgreich!',
+      url: '/',
+      tag: 'test',
+    });
+    return { ok: true, subscribers: pushService.getSubscriptionCount() };
+  });
+
+  // --- Scenario endpoint: compute charge plans for multiple correction factors ---
+
+  app.get('/api/charge-plan/scenarios', async (request, reply) => {
+    if (!state) return reply.code(500).send({ error: 'AppState not initialized' });
+
+    const query = request.query as { factors?: string };
+    const factorStrs = (query.factors ?? '0.5,1.25').split(',');
+    const factors = factorStrs.map(Number).filter(n => !isNaN(n) && n >= 0.1 && n <= 2.0);
+
+    const config = state.getConfig();
+    const pvS = loadPvSettings(pvSettingsPath);
+    const emptyForecast = { hours: [], totalKwh: 0, intervalHours: 1 };
+    const vrmForecast = pvS.vrmForecastEnabled ? state.vrm.getForecast() : emptyForecast;
+    const solarForecast = pvS.forecastSolarEnabled ? state.forecastSolar.getForecast() : emptyForecast;
+    const ensemble = computeEnsembleForecast(vrmForecast, solarForecast);
+    const systemState = state.mqtt.getState();
+
+    let prices: PriceEntry[] = [];
+    try { prices = await fetchPrices(); } catch { /* optional */ }
+
+    const scenarios = factors.map(factor => {
+      try {
+        const plan = computeChargePlan(ensemble, prices, {
+          currentSoc: systemState.batterySoc,
+          batteryCapacityKwh: config.batteryCapacityKwh,
+          targetSocPercent: config.targetSocPercent,
+          minSocPercent: config.minSocPercent,
+          maxAcPowerW: config.maxAcPowerW,
+          feedInRateCentPerKwh: config.feedInRateCentPerKwh,
+          consumptionDayW: config.consumptionDayW,
+          consumptionNightW: config.consumptionNightW,
+          priceOptimization: config.priceOptimization,
+          allowFeedInNegativePrice: config.allowFeedInNegativePrice,
+          preferredMaxChargeW: config.preferredMaxChargeW,
+          actualPvPowerW: systemState.pvPower,
+          forecastCorrectionOverride: factor,
+        });
+        // Compute total corrected PV forecast
+        const totalPvKwh = plan.slots.reduce((s, sl) => s + sl.forecastW * 0.25 / 1000, 0);
+        return {
+          factor,
+          totalPvKwh: Math.round(totalPvKwh * 100) / 100,
+          totalFeedInKwh: plan.totalFeedInKwh,
+          totalRevenueFixedCent: plan.totalRevenueFixedCent,
+          totalRevenueMarketCent: plan.totalRevenueMarketCent,
+          slots: plan.slots,
+        };
+      } catch {
+        return { factor, error: 'Failed to compute plan' };
+      }
+    });
+
+    // Compute the auto correction factor (what the system uses without override)
+    let autoFactor: number | null = null;
+    try {
+      const autoPlan = computeChargePlan(ensemble, prices, {
+        currentSoc: systemState.batterySoc,
+        batteryCapacityKwh: config.batteryCapacityKwh,
+        targetSocPercent: config.targetSocPercent,
+        minSocPercent: config.minSocPercent,
+        maxAcPowerW: config.maxAcPowerW,
+        feedInRateCentPerKwh: config.feedInRateCentPerKwh,
+        consumptionDayW: config.consumptionDayW,
+        consumptionNightW: config.consumptionNightW,
+        priceOptimization: config.priceOptimization,
+        allowFeedInNegativePrice: config.allowFeedInNegativePrice,
+        preferredMaxChargeW: config.preferredMaxChargeW,
+        actualPvPowerW: systemState.pvPower,
+      });
+      autoFactor = autoPlan.forecastCorrectionFactor;
+    } catch { /* optional */ }
+
+    return { scenarios, currentFactor: config.forecastCorrectionOverride, autoFactor };
   });
 
   return app;

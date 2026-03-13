@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from 'react';
 import Link from 'next/link';
+import { usePushNotifications } from '../../hooks/use-push-notifications';
 
 interface Config {
   [key: string]: unknown;
@@ -25,6 +26,7 @@ export default function SettingsPage() {
   const [message, setMessage] = useState('');
   const [pvSettings, setPvSettings] = useState<PvSystemSettings | null>(null);
   const [savingPv, setSavingPv] = useState(false);
+  const push = usePushNotifications();
 
   useEffect(() => {
     fetch('/api/config')
@@ -178,6 +180,47 @@ export default function SettingsPage() {
             {setpoint.toLocaleString('de-DE')} W
           </span>
         </div>
+      </div>
+
+      {/* Push Notifications */}
+      <div className="rounded-xl border border-[var(--border)] bg-[var(--bg-card)] p-5 mb-6">
+        <div className="flex items-center justify-between">
+          <div>
+            <p className="text-sm font-medium text-[var(--text-primary)]">Push-Benachrichtigungen</p>
+            <p className="text-xs text-[var(--text-secondary)] mt-1">
+              {push.supported
+                ? 'Morgen-Briefing und Tages-Zusammenfassung per Push.'
+                : 'Push wird auf diesem Gerät nicht unterstützt.'}
+            </p>
+          </div>
+          <button
+            onClick={() => push.subscribed ? push.unsubscribe() : push.subscribe()}
+            disabled={!push.supported || push.loading}
+            className={`relative w-12 h-6 rounded-full transition-colors shrink-0 cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed ${
+              push.subscribed
+                ? 'bg-[var(--accent)]'
+                : 'bg-[var(--border)]'
+            }`}
+          >
+            <span
+              className={`absolute top-0.5 left-0.5 w-5 h-5 rounded-full bg-white transition-transform ${
+                push.subscribed ? 'translate-x-6' : ''
+              }`}
+            />
+          </button>
+        </div>
+        {push.subscribed && (
+          <button
+            onClick={() => {
+              fetch('/api/push/test', { method: 'POST' })
+                .then(() => showMessage('Test-Notification gesendet'))
+                .catch(() => showMessage('Fehler beim Senden'));
+            }}
+            className="mt-3 px-4 py-1.5 rounded-lg text-xs font-medium bg-[var(--bg-card-hover)] text-[var(--text-secondary)] hover:text-[var(--text-primary)] border border-[var(--border)] transition-colors"
+          >
+            Test senden
+          </button>
+        )}
       </div>
 
       {/* Price Optimization Toggle */}

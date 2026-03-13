@@ -11,6 +11,10 @@ import { InexogyService } from './inexogy-service.js';
 import { GridHistoryService } from './grid-history-service.js';
 import { NibePoller } from './nibe-poller.js';
 import { WallboxPoller } from './wallbox-poller.js';
+import { initVapid } from './vapid.js';
+import { PushService } from './push-service.js';
+import { PvTracker } from './pv-tracker.js';
+import { NotificationService } from './notification-service.js';
 
 async function main() {
   const config = loadConfig();
@@ -86,7 +90,14 @@ async function main() {
     console.log('[energy-control] tesla wallbox poller enabled');
   }
 
-  const server = buildServer({ appState, inexogyService, gridHistoryService, batteryHistoryService, consumptionHistoryService, socHistoryService, nibePoller, wallboxPoller });
+  // --- Push notifications ---
+  initVapid(dataDir);
+  const pushService = new PushService(dataDir);
+  const pvTracker = new PvTracker();
+  new NotificationService(pushService);
+  appState.setPvTracker(pvTracker, gridHistoryService);
+
+  const server = buildServer({ appState, inexogyService, gridHistoryService, batteryHistoryService, consumptionHistoryService, socHistoryService, nibePoller, wallboxPoller, pushService });
   await server.listen({ port: 3002, host: '0.0.0.0' });
 
   console.log('[energy-control] Server running on http://0.0.0.0:3002');

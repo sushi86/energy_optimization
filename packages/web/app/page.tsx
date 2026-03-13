@@ -73,6 +73,12 @@ function ModeSelector({ mode, onChangeMode }: { mode: string; onChangeMode: (m: 
           </button>
         );
       })}
+      <Link
+        href="/scenario-decision"
+        className="px-3 py-1 rounded-full text-sm font-medium border transition-colors cursor-pointer bg-transparent text-[var(--text-secondary)] border-[var(--border)] hover:text-[var(--text-primary)] hover:border-[var(--text-secondary)]"
+      >
+        Szenario
+      </Link>
     </div>
   );
 }

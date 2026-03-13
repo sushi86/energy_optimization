@@ -8,6 +8,8 @@ import { loadPvSettings, savePvSettings, type PvSettings } from './pv-settings.j
 import { resolve, dirname } from 'path';
 import { fileURLToPath } from 'url';
 import fs from 'node:fs';
+import type { PvTracker } from './pv-tracker.js';
+import type { GridHistoryService } from './grid-history-service.js';
 
 export interface AppStateOptions {
   mqttUrl: string;
@@ -47,6 +49,8 @@ export class AppState {
   private lastRegulationDate: string = new Date().toLocaleDateString('sv-SE', { timeZone: 'Europe/Berlin' });
   /** Samples of raw correction factors within each 15-min slot for averaging */
   private correctionSamples: Array<{ slotMs: number; factor: number }> = [];
+  private pvTracker: PvTracker | null = null;
+  private gridHistoryForTracker: GridHistoryService | null = null;
 
   private constructor(options: AppStateOptions) {
     this.config = { ...options };
@@ -194,6 +198,23 @@ export class AppState {
 
     const result = this.controller.computeSetpoint(systemState, forecast, correctedRemainingKwh, prices, chargePlan ?? undefined);
 
+    // Check PV tracker for notification events
+    if (this.pvTracker) {
+      try {
+        this.pvTracker.check({
+          pvPowerW: systemState.pvPower,
+          batterySoc: systemState.batterySoc,
+          forecast,
+          chargePlan,
+          prices,
+          gridHistoryService: this.gridHistoryForTracker ?? undefined,
+          feedInRateCentPerKwh: this.config.feedInRateCentPerKwh,
+        });
+      } catch (e) {
+        console.error('[pv-tracker] check error:', (e as Error).message);
+      }
+    }
+
     if (result.mode === 'manual') return;
 
     const prev = this.controller.getLastResult();
@@ -209,6 +230,11 @@ export class AppState {
       }
       await this.mqtt.setGridSetpoint(result.setpointW);
     }
+  }
+
+  setPvTracker(tracker: PvTracker, gridHistory: GridHistoryService): void {
+    this.pvTracker = tracker;
+    this.gridHistoryForTracker = gridHistory;
   }
 
   getConfig(): AppStateOptions {
