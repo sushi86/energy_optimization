@@ -30,6 +30,7 @@ export interface ChargePlanSlot {
   revenueFixedCent: number;
   revenueMarketCent: number;
   clippingW: number;
+  consumptionW: number;
 }
 
 export interface ChargePlan {
@@ -166,10 +167,27 @@ export function computeChargePlan(
       .reduce((sum, s) => sum + s.surplusW * ih / 1000, 0);
   const voluntaryNeedKwh = Math.max(0, batteryNeedKwh - totalClippingKwh - negativePriceChargeKwh);
 
+  // --- Tight forecast check (must match controller threshold) ---
+  // When the net surplus barely covers battery need, the controller ignores the
+  // charge plan and sets setpoint=0 (charge everything). Mirror that decision
+  // here so the displayed plan matches the actual controller behaviour.
+  const totalNetSurplusKwh = analysis.reduce((sum, s) => sum + Math.max(0, s.surplusW) * ih / 1000, 0);
+  const surplusRatio = batteryNeedKwh > 0 ? totalNetSurplusKwh / batteryNeedKwh : Infinity;
+  const tightForecast = surplusRatio < 1.5 && batteryNeedKwh > 0;
+
   // --- Assign voluntary charge per slot ---
   const voluntaryChargeW = new Array<number>(analysis.length).fill(0);
 
-  if (voluntaryNeedKwh > 0) {
+  if (tightForecast) {
+    // Tight forecast: charge all surplus — the controller will override any
+    // feed-in decision anyway. The forward simulation still caps at targetSoc
+    // and redirects excess to feed-in once the battery is full.
+    for (const s of analysis) {
+      if (s.voluntarySurplusW > 0) {
+        voluntaryChargeW[s.idx] = s.voluntarySurplusW;
+      }
+    }
+  } else if (voluntaryNeedKwh > 0) {
     if (priceOptimization) {
       // PRICE OPTIMIZATION: charge in cheapest slots to minimize opportunity cost
       // → equivalent to maximizing revenue from feed-in in expensive slots
@@ -293,6 +311,7 @@ export function computeChargePlan(
       revenueFixedCent: Math.round(revenueFixedCent * 100) / 100,
       revenueMarketCent: Math.round(revenueMarketCent * 100) / 100,
       clippingW: Math.round(s.clippingW),
+      consumptionW: Math.round(s.consumptionW),
     });
   }
 

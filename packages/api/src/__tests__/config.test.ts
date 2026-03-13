@@ -25,7 +25,7 @@ describe('loadConfig', () => {
     expect(config.WINTER_MODE_THRESHOLD_FACTOR).toBe(1.2);
     expect(config.REGULATION_INTERVAL_MS).toBe(20000);
     expect(config.LARGE_CHANGE_THRESHOLD_W).toBe(3000);
-    expect(config.DEADBAND_W).toBe(1500);
+    expect(config.DEADBAND_W).toBe(50);
   });
 
   it('overrides defaults from env', () => {

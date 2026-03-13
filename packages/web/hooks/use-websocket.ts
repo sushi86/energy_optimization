@@ -38,6 +38,7 @@ export interface ChargePlanSlot {
   revenueFixedCent: number;
   revenueMarketCent: number;
   clippingW: number;
+  consumptionW: number;
 }
 
 export interface ChargePlan {

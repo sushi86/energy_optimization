@@ -20,6 +20,7 @@ export interface ServerOptions {
   gridHistoryService?: GridHistoryService;
   batteryHistoryService?: GridHistoryService;
   consumptionHistoryService?: GridHistoryService;
+  socHistoryService?: GridHistoryService;
   nibePoller?: NibePoller;
   wallboxPoller?: WallboxPoller;
 }
@@ -82,6 +83,7 @@ export function buildServer(options: ServerOptions = {}): FastifyInstance {
   const gridHistoryService = options.gridHistoryService;
   const batteryHistoryService = options.batteryHistoryService;
   const consumptionHistoryService = options.consumptionHistoryService;
+  const socHistoryService = options.socHistoryService;
   const nibePoller = options.nibePoller;
   const wallboxPoller = options.wallboxPoller;
   const pvSettingsPath = options.pvSettingsPath ?? resolve(dirname(fileURLToPath(import.meta.url)), '../../../data/pv-settings.json');
@@ -409,6 +411,23 @@ export function buildServer(options: ServerOptions = {}): FastifyInstance {
     const slotsObj = consumptionHistoryService.getSlots(dateStr);
     const slots = Object.entries(slotsObj)
       .map(([time, slot]) => ({ time, ...slot }))
+      .sort((a, b) => a.time.localeCompare(b.time));
+    return { date: dateStr, slots };
+  });
+
+  app.get('/api/soc/history', async (request) => {
+    if (!socHistoryService) {
+      return { date: '', slots: [] };
+    }
+    const query = request.query as { date?: string };
+    const tz = 'Europe/Berlin';
+    const dateStr = query.date ?? new Date().toLocaleDateString('sv-SE', { timeZone: tz });
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(dateStr)) {
+      return { date: '', slots: [] };
+    }
+    const slotsObj = socHistoryService.getSlots(dateStr);
+    const slots = Object.entries(slotsObj)
+      .map(([time, slot]) => ({ time, avgSoc: slot.avgPowerW, samples: slot.samples }))
       .sort((a, b) => a.time.localeCompare(b.time));
     return { date: dateStr, slots };
   });

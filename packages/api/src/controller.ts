@@ -214,6 +214,7 @@ export class Controller {
     const surplusRatio = batteryNeedKwh > 0 ? netForecastKwh / batteryNeedKwh : Infinity;
 
     if (surplusKwh <= 0 || surplusRatio < 1.5) {
+      const now = new Date();
       return {
         setpointW: 0,
         mode: 'auto',
@@ -223,7 +224,7 @@ export class Controller {
           desiredChargePowerW: currentSurplusW,
           feedInW: 0,
           batteryNeedKwh,
-          remainingHours: 0,
+          remainingHours: this.getRemainingProductionHours(forecast, now),
           remainingForecastKwh: Math.round(netForecastKwh * 10) / 10,
           isClippingRisk: false,
           earlyClippingOverride: false,

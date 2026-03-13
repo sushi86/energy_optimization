@@ -47,7 +47,7 @@ describe('API Endpoints', () => {
       winterModeThresholdFactor: 1.2,
       regulationIntervalMs: 60000,
       largeChangeThresholdW: 3000,
-      deadbandW: 1500,
+      deadbandW: 50,
       priceOptimization: false,
       allowFeedInNegativePrice: false,
       feedInRateCentPerKwh: 7,
@@ -104,7 +104,7 @@ describe('API Endpoints', () => {
         winterModeThresholdFactor: 1.2,
         regulationIntervalMs: 60000,
         largeChangeThresholdW: 3000,
-        deadbandW: 1500,
+        deadbandW: 50,
       },
     });
     expect(res.statusCode).toBe(200);

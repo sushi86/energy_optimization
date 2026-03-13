@@ -188,7 +188,11 @@ export class AppState {
       });
     } catch { /* plan is optional */ }
 
-    const result = this.controller.computeSetpoint(systemState, forecast, remainingKwh, prices, chargePlan ?? undefined);
+    // Apply forecast correction factor to remaining kWh so it matches the corrected PV forecast
+    const correctionFactor = chargePlan?.forecastCorrectionFactor ?? 1;
+    const correctedRemainingKwh = remainingKwh * correctionFactor;
+
+    const result = this.controller.computeSetpoint(systemState, forecast, correctedRemainingKwh, prices, chargePlan ?? undefined);
 
     if (result.mode === 'manual') return;
 

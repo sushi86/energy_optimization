@@ -47,6 +47,7 @@ async function main() {
   const gridHistoryService = new GridHistoryService(resolve(dataDir, 'grid-history'));
   const batteryHistoryService = new GridHistoryService(resolve(dataDir, 'battery-history'));
   const consumptionHistoryService = new GridHistoryService(resolve(dataDir, 'consumption-history'));
+  const socHistoryService = new GridHistoryService(resolve(dataDir, 'soc-history'));
 
   // Record power values on every MQTT state change
   appState.mqtt.on('stateChange', () => {
@@ -54,6 +55,7 @@ async function main() {
     gridHistoryService.recordSample(s.gridPower);
     batteryHistoryService.recordSample(s.batteryPower);
     consumptionHistoryService.recordSample(s.consumptionPower);
+    socHistoryService.recordSample(s.batterySoc);
   });
 
   let inexogyService: InexogyService | undefined;
@@ -84,7 +86,7 @@ async function main() {
     console.log('[energy-control] tesla wallbox poller enabled');
   }
 
-  const server = buildServer({ appState, inexogyService, gridHistoryService, batteryHistoryService, consumptionHistoryService, nibePoller, wallboxPoller });
+  const server = buildServer({ appState, inexogyService, gridHistoryService, batteryHistoryService, consumptionHistoryService, socHistoryService, nibePoller, wallboxPoller });
   await server.listen({ port: 3002, host: '0.0.0.0' });
 
   console.log('[energy-control] Server running on http://0.0.0.0:3002');
@@ -96,6 +98,7 @@ async function main() {
     gridHistoryService.stop();
     batteryHistoryService.stop();
     consumptionHistoryService.stop();
+    socHistoryService.stop();
     nibePoller?.stop();
     wallboxPoller?.stop();
     process.exit(0);

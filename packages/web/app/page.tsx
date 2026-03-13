@@ -4,7 +4,7 @@ import { useEffect, useState, useRef, useCallback, useMemo } from 'react';
 import Link from 'next/link';
 import { useWebSocket, type SystemStatus, type ControllerDetails, type ChargePlan, type ChargePlanSlot } from '../hooks/use-websocket';
 import { berechneStrompreis, getTarifstufe } from './strompreis';
-import { AirVent, BatteryCharging } from 'lucide-react';
+import { Heater, EvCharger } from 'lucide-react';
 
 interface ForecastHour {
   timestamp: string;
@@ -536,13 +536,14 @@ function findPriceForSlot(prices: PriceEntry[], hour: number, minute: number): n
   return 0;
 }
 
-function ChargePlanChart({ plan, hoveredSlot, setHoveredSlot, actualFeedIn, actualBattery, actualConsumption, prices }: {
+function ChargePlanChart({ plan, hoveredSlot, setHoveredSlot, actualFeedIn, actualBattery, actualConsumption, actualSoc, prices }: {
   plan: ChargePlan;
   hoveredSlot: number | null;
   setHoveredSlot: (i: number | null) => void;
   actualFeedIn: Map<string, { feedInW: number; feedInKwh: number }>;
   actualBattery: Map<string, number>;
   actualConsumption: Map<string, number>;
+  actualSoc: Map<string, number>;
   prices: PriceEntry[];
 }) {
 
@@ -611,7 +612,7 @@ function ChargePlanChart({ plan, hoveredSlot, setHoveredSlot, actualFeedIn, actu
     return a.feedInW + battW + consW;
   });
   const peakW = Math.max(
-    ...plan.slots.map(s => (s.chargePowerW ?? 0) + (s.feedInPowerW ?? 0)),
+    ...plan.slots.map(s => (s.chargePowerW ?? 0) + (s.feedInPowerW ?? 0) + (s.consumptionW ?? 0)),
     ...actualStackPeaks,
     1,
   );
@@ -627,9 +628,14 @@ function ChargePlanChart({ plan, hoveredSlot, setHoveredSlot, actualFeedIn, actu
   }
 
   // Build SOC points for SVG from the 96-slot grid
-  // Use actual current SoC for hours before the plan starts
+  // Use actual historical SOC for past slots, estimated for future
+  const nowKey = currentSlotKey();
   const startSoc = plan.currentSoc ?? plan.slots[0]?.estimatedSoc ?? 50;
   const socPoints = TIME_GRID.map((slot, i) => {
+    const actual = actualSoc.get(slot.key);
+    if (actual != null && slot.key <= nowKey) {
+      return { x: (i + 0.5) * 100, soc: actual };
+    }
     const s = slotByKey.get(slot.key);
     const soc = s?.estimatedSoc ?? (i === 0 ? startSoc : null);
     return { x: (i + 0.5) * 100, soc };
@@ -785,7 +791,7 @@ function ChargePlanChart({ plan, hoveredSlot, setHoveredSlot, actualFeedIn, actu
           {TIME_GRID.map((slot, i) => {
             const h = slotByKey.get(slot.key);
             const rawChargeW = h?.chargePowerW ?? 0;
-            const rawClippingW = Math.min(h?.clippingW ?? 0, rawChargeW);
+            const rawClippingW = Math.max(0, Math.min(h?.clippingW ?? 0, rawChargeW));
             const isPast = slot.key < nowKey;
             const actual = actualFeedIn.get(slot.key);
             const actualBattW = actualBattery.get(slot.key) ?? 0;
@@ -798,7 +804,9 @@ function ChargePlanChart({ plan, hoveredSlot, setHoveredSlot, actualFeedIn, actu
             const voluntaryW = Math.max(0, chargeW - clippingW);
             const feedInW = visibleSeries.feedIn ? ((isPast && actual) ? actual.feedInW : (h?.feedInPowerW ?? 0)) : 0;
             const battChargeW = (hasActualHistory && visibleSeries.charge) ? Math.max(0, actualBattW) : 0;
-            const consW = (hasActualHistory && visibleSeries.consumption) ? actualConsW : 0;
+            const consW = hasActualHistory
+              ? (visibleSeries.consumption ? Math.max(0, actualConsW) : 0)
+              : (visibleSeries.consumption ? Math.max(0, h?.consumptionW ?? 0) : 0);
 
             const clippingPct = (clippingW / maxPower) * 100;
             const voluntaryPct = (voluntaryW / maxPower) * 100;
@@ -806,10 +814,10 @@ function ChargePlanChart({ plan, hoveredSlot, setHoveredSlot, actualFeedIn, actu
             const feedInPct = (feedInW / maxPower) * 100;
             const battChargePct = (battChargeW / maxPower) * 100;
             const consPct = (consW / maxPower) * 100;
-            // For past slots with actuals: stack feed-in + battery + consumption
+            // Stack: feed-in + charge + consumption (past uses actual battery instead of plan charge)
             const totalPct = hasActualHistory
               ? feedInPct + battChargePct + consPct
-              : chargePct + feedInPct;
+              : chargePct + feedInPct + consPct;
             const isHovered = hoveredSlot === i;
             const isCurrent = slot.key === nowKey;
             const dimmed = hoveredSlot !== null && !isHovered;
@@ -847,6 +855,10 @@ function ChargePlanChart({ plan, hoveredSlot, setHoveredSlot, actualFeedIn, actu
                         {' · '}
                         <span className="text-green-400">Einsp.: {formatPower(feedInW)}</span>
                       </>}
+                      {consW > 0 && <>
+                        {' · '}
+                        <span className="text-red-400">Verbr.: {formatPower(consW)}</span>
+                      </>}
                     </>}
                     {h && <>
                       {' · '}
@@ -868,79 +880,93 @@ function ChargePlanChart({ plan, hoveredSlot, setHoveredSlot, actualFeedIn, actu
                 <div className="w-full flex items-end justify-center h-full">
                   <div className="relative w-full" style={{ height: `${Math.min(totalPct, 100)}%` }}>
                     {hasActualHistory ? <>
-                      {/* Past slots: actual stacked bars — feed-in (green) → battery (blue) → consumption (red) */}
-                      {feedInW > 0 && (
+                      {/* Past slots: actual stacked bars — consumption (red) → feed-in (green) → battery (blue) */}
+                      {consW > 0 && (
                         <div
                           className="absolute bottom-0 w-full transition-opacity"
                           style={{
+                            height: totalPct > 0 ? `${(consPct / totalPct) * 100}%` : '0%',
+                            backgroundColor: '#ef4444',
+                            opacity: dimmed ? 0.2 : 0.8,
+                            minHeight: '2px',
+                            borderRadius: !(feedInW > 0) && !(battChargeW > 0) ? '2px 2px 0 0' : '0',
+                          }}
+                        />
+                      )}
+                      {feedInW > 0 && (
+                        <div
+                          className="absolute w-full transition-opacity"
+                          style={{
+                            bottom: totalPct > 0 ? `${(consPct / totalPct) * 100}%` : '0%',
                             height: totalPct > 0 ? `${(feedInPct / totalPct) * 100}%` : '0%',
                             backgroundColor: '#22c55e',
                             opacity: dimmed ? 0.2 : 0.8,
                             minHeight: '2px',
-                            borderRadius: battChargePct === 0 && consPct === 0 ? '2px 2px 0 0' : '0',
+                            borderRadius: !(battChargeW > 0) ? '2px 2px 0 0' : '0',
                           }}
                         />
                       )}
                       {battChargeW > 0 && (
                         <div
-                          className="absolute w-full transition-opacity"
-                          style={{
-                            bottom: totalPct > 0 ? `${(feedInPct / totalPct) * 100}%` : '0%',
-                            height: totalPct > 0 ? `${(battChargePct / totalPct) * 100}%` : '0%',
-                            backgroundColor: '#3b82f6',
-                            opacity: dimmed ? 0.2 : 0.8,
-                            minHeight: '2px',
-                            borderRadius: consPct === 0 ? '2px 2px 0 0' : '0',
-                          }}
-                        />
-                      )}
-                      {consW > 0 && (
-                        <div
                           className="absolute w-full rounded-t transition-opacity"
                           style={{
-                            bottom: totalPct > 0 ? `${((feedInPct + battChargePct) / totalPct) * 100}%` : '0%',
-                            height: totalPct > 0 ? `${(consPct / totalPct) * 100}%` : '0%',
-                            backgroundColor: '#ef4444',
+                            bottom: totalPct > 0 ? `${((consPct + feedInPct) / totalPct) * 100}%` : '0%',
+                            height: totalPct > 0 ? `${(battChargePct / totalPct) * 100}%` : '0%',
+                            backgroundColor: '#3b82f6',
                             opacity: dimmed ? 0.2 : 0.8,
                             minHeight: '2px',
                           }}
                         />
                       )}
                     </> : <>
-                      {/* Future/current slots: plan bars */}
+                      {/* Future/current slots: plan bars — consumption (red) → feed-in (green) → clipping (yellow) → voluntary (blue) */}
+                      {consW > 0 && (
+                        <div
+                          className="absolute bottom-0 w-full transition-opacity"
+                          style={{
+                            height: totalPct > 0 ? `${(consPct / totalPct) * 100}%` : '0%',
+                            backgroundColor: '#ef4444',
+                            opacity: dimmed ? 0.2 : isCurrent ? 1 : 0.6,
+                            minHeight: '2px',
+                            borderRadius: !(feedInW > 0) && !(clippingW > 0) && !(voluntaryW > 0) ? '2px 2px 0 0' : '0',
+                          }}
+                        />
+                      )}
                       {feedInW > 0 && (
                         <div
-                          className="absolute bottom-0 w-full rounded-t transition-opacity"
+                          className="absolute w-full transition-opacity"
                           style={{
+                            bottom: totalPct > 0 ? `${(consPct / totalPct) * 100}%` : '0%',
                             height: totalPct > 0 ? `${(feedInPct / totalPct) * 100}%` : '0%',
                             backgroundColor: '#22c55e',
                             opacity: dimmed ? 0.2 : isCurrent ? 1 : 0.8,
                             minHeight: '2px',
                             outline: isCurrent ? '1.5px solid white' : 'none',
-                          }}
-                        />
-                      )}
-                      {voluntaryW > 0 && (
-                        <div
-                          className="absolute w-full transition-opacity"
-                          style={{
-                            bottom: totalPct > 0 ? `${((feedInPct + clippingPct) / totalPct) * 100}%` : '0%',
-                            height: totalPct > 0 ? `${(voluntaryPct / totalPct) * 100}%` : '0%',
-                            backgroundColor: '#3b82f6',
-                            opacity: dimmed ? 0.2 : isCurrent ? 1 : 0.8,
-                            minHeight: '2px',
-                            outline: isCurrent ? '1.5px solid white' : 'none',
-                            borderRadius: clippingW > 0 ? '0' : '2px 2px 0 0',
+                            borderRadius: !(clippingW > 0) && !(voluntaryW > 0) ? '2px 2px 0 0' : '0',
                           }}
                         />
                       )}
                       {clippingW > 0 && (
                         <div
-                          className="absolute w-full rounded-t transition-opacity"
+                          className="absolute w-full transition-opacity"
                           style={{
-                            bottom: totalPct > 0 ? `${(feedInPct / totalPct) * 100}%` : '0%',
+                            bottom: totalPct > 0 ? `${((consPct + feedInPct) / totalPct) * 100}%` : '0%',
                             height: totalPct > 0 ? `${(clippingPct / totalPct) * 100}%` : '0%',
                             backgroundColor: '#eab308',
+                            opacity: dimmed ? 0.2 : isCurrent ? 1 : 0.8,
+                            minHeight: '2px',
+                            outline: isCurrent ? '1.5px solid white' : 'none',
+                            borderRadius: !(voluntaryW > 0) ? '2px 2px 0 0' : '0',
+                          }}
+                        />
+                      )}
+                      {voluntaryW > 0 && (
+                        <div
+                          className="absolute w-full rounded-t transition-opacity"
+                          style={{
+                            bottom: totalPct > 0 ? `${((consPct + feedInPct + clippingPct) / totalPct) * 100}%` : '0%',
+                            height: totalPct > 0 ? `${(voluntaryPct / totalPct) * 100}%` : '0%',
+                            backgroundColor: '#3b82f6',
                             opacity: dimmed ? 0.2 : isCurrent ? 1 : 0.8,
                             minHeight: '2px',
                             outline: isCurrent ? '1.5px solid white' : 'none',
@@ -1061,13 +1087,13 @@ function buildExportCsv(status: SystemStatus | null, prices: PriceEntry[]): stri
     if (p.price !== null) priceMap.set(p.timestamp, p.price);
   }
 
-  lines.push('time,forecastW,chargePowerW,feedInW,estSoc,revenueFixedCt,revenueMarketCt,priceMwh');
+  lines.push('time,forecastW,chargePowerW,feedInW,consumptionW,estSoc,revenueFixedCt,revenueMarketCt,priceMwh');
   for (const s of futureSlots) {
     const t = `${String(s.hour).padStart(2, '0')}:${String(s.minute).padStart(2, '0')}`;
     const ts = Math.floor(new Date(s.timestamp).getTime() / 1000);
     // Find price: exact match or hourly match
     const price = priceMap.get(ts) ?? priceMap.get(ts - (ts % 3600)) ?? '';
-    lines.push(`${t},${s.forecastW},${s.chargePowerW},${s.feedInPowerW},${s.estimatedSoc},${s.revenueFixedCent},${s.revenueMarketCent},${price}`);
+    lines.push(`${t},${s.forecastW},${s.chargePowerW},${s.feedInPowerW},${s.consumptionW ?? 0},${s.estimatedSoc},${s.revenueFixedCent},${s.revenueMarketCent},${price}`);
   }
 
   return lines.join('\n');
@@ -1084,6 +1110,7 @@ export default function Dashboard() {
   const [gridHistory, setGridHistory] = useState<GridHistorySlot[]>([]);
   const [batteryHistory, setBatteryHistory] = useState<GridHistorySlot[]>([]);
   const [consumptionHistory, setConsumptionHistory] = useState<GridHistorySlot[]>([]);
+  const [socHistory, setSocHistory] = useState<{ time: string; avgSoc: number }[]>([]);
   const [manualSetpoint, setManualSetpoint] = useState(-5000);
   const [modeOverride, setModeOverride] = useState<string | null>(null);
   const [hoveredSlot, setHoveredSlot] = useState<number | null>(null);
@@ -1221,6 +1248,10 @@ export default function Dashboard() {
       .then((r) => r.json())
       .then((data) => { if (Array.isArray(data?.slots)) setConsumptionHistory(data.slots); })
       .catch(() => {});
+    fetch('/api/soc/history')
+      .then((r) => r.json())
+      .then((data) => { if (Array.isArray(data?.slots)) setSocHistory(data.slots); })
+      .catch(() => {});
   }, [reconnect]);
 
   const { containerRef, pullDistance, refreshing, threshold } = usePullToRefresh(handleRefresh);
@@ -1265,6 +1296,14 @@ export default function Dashboard() {
     }
     return map;
   }, [consumptionHistory]);
+
+  const actualSoc = useMemo(() => {
+    const map = new Map<string, number>();
+    for (const slot of socHistory) {
+      map.set(slot.time, slot.avgSoc);
+    }
+    return map;
+  }, [socHistory]);
 
   // Estimate time to 100% (charging) or 20% (discharging)
   const batteryTimeEstimate = (() => {
@@ -1351,13 +1390,13 @@ export default function Dashboard() {
             <div className="flex flex-col items-end gap-0.5">
               {heatPumpPowerW !== null && (
                 <p className="text-xs text-[var(--text-secondary)] flex items-center gap-1" title="Wärmepumpe">
-                  <AirVent size={12} />
+                  <Heater size={12} />
                   {formatPower(heatPumpPowerW)}
                 </p>
               )}
               {wallboxPowerW !== null && wallboxPowerW > 0 && (
                 <p className="text-xs text-[var(--text-secondary)] flex items-center gap-1" title="Wallbox">
-                  <BatteryCharging size={12} />
+                  <EvCharger size={12} />
                   {formatPower(wallboxPowerW)}
                 </p>
               )}
@@ -1573,7 +1612,7 @@ export default function Dashboard() {
       {/* Charge Plan Chart */}
       {status?.chargePlan && status.chargePlan.slots.length > 0 && (
         <div className="rounded-xl border border-[var(--border)] bg-[var(--bg-card)] p-5 mt-4">
-          <ChargePlanChart plan={status.chargePlan} hoveredSlot={hoveredSlot} setHoveredSlot={setHoveredSlot} actualFeedIn={actualFeedIn} actualBattery={actualBattery} actualConsumption={actualConsumption} prices={prices} />
+          <ChargePlanChart plan={status.chargePlan} hoveredSlot={hoveredSlot} setHoveredSlot={setHoveredSlot} actualFeedIn={actualFeedIn} actualBattery={actualBattery} actualConsumption={actualConsumption} actualSoc={actualSoc} prices={prices} />
         </div>
       )}
 

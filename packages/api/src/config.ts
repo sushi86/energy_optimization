@@ -12,7 +12,7 @@ const configSchema = z.object({
   WINTER_MODE_THRESHOLD_FACTOR: z.coerce.number().default(1.2),
   REGULATION_INTERVAL_MS: z.coerce.number().default(20000),
   LARGE_CHANGE_THRESHOLD_W: z.coerce.number().default(3000),
-  DEADBAND_W: z.coerce.number().default(1500),
+  DEADBAND_W: z.coerce.number().default(50),
   PRICE_OPTIMIZATION: z.coerce.boolean().default(false),
   ALLOW_FEED_IN_NEGATIVE_PRICE: z.coerce.boolean().default(false),
   FEED_IN_RATE_CENT_PER_KWH: z.coerce.number().default(7),
