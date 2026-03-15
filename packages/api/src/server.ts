@@ -1,5 +1,6 @@
 import Fastify, { type FastifyInstance } from 'fastify';
 import websocket from '@fastify/websocket';
+import proxy from '@fastify/http-proxy';
 import { resolve, dirname } from 'path';
 import { fileURLToPath } from 'url';
 import type { AppState } from './app-state.js';
@@ -23,6 +24,7 @@ export interface ServerOptions {
   batteryHistoryService?: GridHistoryService;
   consumptionHistoryService?: GridHistoryService;
   socHistoryService?: GridHistoryService;
+  pvHistoryService?: GridHistoryService;
   nibePoller?: NibePoller;
   wallboxPoller?: WallboxPoller;
   pushService?: PushService;
@@ -87,6 +89,7 @@ export function buildServer(options: ServerOptions = {}): FastifyInstance {
   const batteryHistoryService = options.batteryHistoryService;
   const consumptionHistoryService = options.consumptionHistoryService;
   const socHistoryService = options.socHistoryService;
+  const pvHistoryService = options.pvHistoryService;
   const nibePoller = options.nibePoller;
   const wallboxPoller = options.wallboxPoller;
   const pushService = options.pushService;
@@ -431,7 +434,7 @@ export function buildServer(options: ServerOptions = {}): FastifyInstance {
     }
     const slotsObj = socHistoryService.getSlots(dateStr);
     const slots = Object.entries(slotsObj)
-      .map(([time, slot]) => ({ time, avgSoc: slot.avgPowerW, samples: slot.samples }))
+      .map(([time, slot]) => ({ time, soc: slot.avgPowerW }))
       .sort((a, b) => a.time.localeCompare(b.time));
     return { date: dateStr, slots };
   });
@@ -473,14 +476,106 @@ export function buildServer(options: ServerOptions = {}): FastifyInstance {
     return { ok: true };
   });
 
-  app.post('/api/push/test', async (_request, reply) => {
+  app.post('/api/push/test', async (request, reply) => {
     if (!pushService) return reply.code(503).send({ error: 'Push not configured' });
-    await pushService.sendNotification({
-      title: 'Energy Control',
-      body: 'Test-Notification erfolgreich!',
-      url: '/',
-      tag: 'test',
-    });
+    if (!state) return reply.code(500).send({ error: 'AppState not initialized' });
+
+    const query = (request.query as { type?: string });
+    const type = query.type ?? 'simple';
+
+    if (type === 'morning' || type === 'evening') {
+      const config = state.getConfig();
+      const pvS = loadPvSettings(pvSettingsPath);
+      const emptyForecast = { hours: [], totalKwh: 0, intervalHours: 1 };
+      const vrmForecast = pvS.vrmForecastEnabled ? state.vrm.getForecast() : emptyForecast;
+      const solarForecast = pvS.forecastSolarEnabled ? state.forecastSolar.getForecast() : emptyForecast;
+      const ensemble = computeEnsembleForecast(vrmForecast, solarForecast);
+      const systemState = state.mqtt.getState();
+
+      let prices: PriceEntry[] = [];
+      try { prices = await fetchPrices(); } catch { /* optional */ }
+
+      const plan = computeChargePlan(ensemble, prices, {
+        currentSoc: systemState.batterySoc,
+        batteryCapacityKwh: config.batteryCapacityKwh,
+        targetSocPercent: config.targetSocPercent,
+        minSocPercent: config.minSocPercent,
+        maxAcPowerW: config.maxAcPowerW,
+        feedInRateCentPerKwh: config.feedInRateCentPerKwh,
+        consumptionDayW: config.consumptionDayW,
+        consumptionNightW: config.consumptionNightW,
+        priceOptimization: config.priceOptimization,
+        allowFeedInNegativePrice: config.allowFeedInNegativePrice,
+        preferredMaxChargeW: config.preferredMaxChargeW,
+        actualPvPowerW: systemState.pvPower,
+        forecastCorrectionOverride: config.forecastCorrectionOverride,
+      });
+
+      if (type === 'morning') {
+        const totalPvKwh = plan.slots.reduce((s, sl) => s + sl.forecastW * 0.25 / 1000, 0);
+        await pushService.sendNotification({
+          title: 'Morgen-Briefing',
+          body: `☀️ ${totalPvKwh.toFixed(1)} kWh · ➡️ ${plan.totalFeedInKwh.toFixed(1)} kWh · 🔋 ${systemState.batterySoc.toFixed(0)}%`,
+          url: '/scenario-decision',
+          tag: 'morning-briefing',
+        });
+      } else {
+        // Use actual historical values for evening summary test
+        let actualPvKwh = 0;
+        let actualFeedInKwh = 0;
+        let actualRevenueFixedCent = 0;
+        let actualRevenueMarketCent = 0;
+
+        if (gridHistoryService) {
+          const gridSlots = gridHistoryService.getSlots();
+          for (const slot of Object.values(gridSlots)) {
+            if (slot.avgPowerW < 0) {
+              actualFeedInKwh += Math.abs(slot.energyWh) / 1000;
+            }
+          }
+          actualRevenueFixedCent = actualFeedInKwh * config.feedInRateCentPerKwh;
+
+          // Market revenue from actual prices
+          if (prices.length > 0) {
+            const todayParts = new Intl.DateTimeFormat('en-CA', { timeZone: 'Europe/Berlin' }).format(new Date());
+            for (const [slotKey, slot] of Object.entries(gridSlots)) {
+              if (slot.avgPowerW >= 0) continue;
+              const slotFeedIn = Math.abs(slot.energyWh) / 1000;
+              const slotDate = new Date(`${todayParts}T${slotKey}:00`);
+              const slotTs = Math.floor(slotDate.getTime() / 1000);
+              let slotPrice: number | null = null;
+              for (let i = prices.length - 1; i >= 0; i--) {
+                if (prices[i].timestamp <= slotTs) { slotPrice = prices[i].price; break; }
+              }
+              if (slotPrice != null) actualRevenueMarketCent += slotFeedIn * (slotPrice / 10);
+            }
+          }
+        }
+
+        if (pvHistoryService) {
+          const pvSlots = pvHistoryService.getSlots();
+          for (const slot of Object.values(pvSlots)) {
+            if (slot.avgPowerW > 0) actualPvKwh += Math.abs(slot.energyWh) / 1000;
+          }
+        }
+
+        const totalRevenueEur = ((actualRevenueFixedCent + actualRevenueMarketCent) / 100).toFixed(2);
+        await pushService.sendNotification({
+          title: 'Tages-Zusammenfassung',
+          body: `☀️ ${actualPvKwh.toFixed(1)} kWh · ➡️ ${actualFeedInKwh.toFixed(1)} kWh · 💵 ${totalRevenueEur}€`,
+          url: '/',
+          tag: 'evening-summary',
+        });
+      }
+    } else {
+      await pushService.sendNotification({
+        title: 'Energy Control',
+        body: 'Test-Notification erfolgreich!',
+        url: '/',
+        tag: 'test',
+      });
+    }
+
     return { ok: true, subscribers: pushService.getSubscriptionCount() };
   });
 
@@ -557,6 +652,14 @@ export function buildServer(options: ServerOptions = {}): FastifyInstance {
     } catch { /* optional */ }
 
     return { scenarios, currentFactor: config.forecastCorrectionOverride, autoFactor };
+  });
+
+  // Proxy everything else to Next.js (running on port 3000 internally)
+  void app.register(proxy, {
+    upstream: 'http://localhost:3000',
+    prefix: '/',
+    rewritePrefix: '/',
+    websocket: false,
   });
 
   return app;

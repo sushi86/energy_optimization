@@ -6,6 +6,7 @@ interface PushState {
   supported: boolean;
   subscribed: boolean;
   loading: boolean;
+  error: string | null;
   subscribe: () => Promise<void>;
   unsubscribe: () => Promise<void>;
 }
@@ -25,6 +26,7 @@ export function usePushNotifications(): PushState {
   const [supported, setSupported] = useState(false);
   const [subscribed, setSubscribed] = useState(false);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
     const isSupported = 'serviceWorker' in navigator && 'PushManager' in window;
@@ -35,14 +37,23 @@ export function usePushNotifications(): PushState {
       return;
     }
 
-    // Check existing subscription
-    navigator.serviceWorker.ready
+    // Register SW first, then check existing subscription
+    navigator.serviceWorker
+      .register('/sw.js')
+      .then((reg) => {
+        // Wait for the SW to be active
+        if (reg.active) return reg;
+        return navigator.serviceWorker.ready;
+      })
       .then((reg) => reg.pushManager.getSubscription())
       .then((sub) => {
         setSubscribed(sub !== null);
         setLoading(false);
       })
-      .catch(() => setLoading(false));
+      .catch((err) => {
+        console.error('[push] Init failed:', err);
+        setLoading(false);
+      });
   }, []);
 
   const subscribe = useCallback(async () => {
@@ -50,13 +61,17 @@ export function usePushNotifications(): PushState {
     setLoading(true);
 
     try {
+      setError(null);
+
       // Register service worker if not already
       const reg = await navigator.serviceWorker.register('/sw.js');
       await navigator.serviceWorker.ready;
 
       // Get VAPID key from backend
       const vapidRes = await fetch('/api/push/vapid-key');
+      if (!vapidRes.ok) throw new Error(`VAPID-Key Fehler: ${vapidRes.status}`);
       const { publicKey } = await vapidRes.json();
+      if (!publicKey) throw new Error('Kein VAPID Public Key vom Server');
 
       // Subscribe to push
       const subscription = await reg.pushManager.subscribe({
@@ -65,15 +80,18 @@ export function usePushNotifications(): PushState {
       });
 
       // Send subscription to backend
-      await fetch('/api/push/subscribe', {
+      const subRes = await fetch('/api/push/subscribe', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(subscription.toJSON()),
       });
+      if (!subRes.ok) throw new Error(`Subscription speichern fehlgeschlagen: ${subRes.status}`);
 
       setSubscribed(true);
     } catch (err) {
-      console.error('[push] Subscribe failed:', err);
+      const msg = err instanceof Error ? err.message : String(err);
+      console.error('[push] Subscribe failed:', msg);
+      setError(msg);
     } finally {
       setLoading(false);
     }
@@ -107,5 +125,5 @@ export function usePushNotifications(): PushState {
     }
   }, [supported]);
 
-  return { supported, subscribed, loading, subscribe, unsubscribe };
+  return { supported, subscribed, loading, error, subscribe, unsubscribe };
 }

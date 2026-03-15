@@ -33,9 +33,11 @@ export class GridHistoryService {
   private accumulators: Record<string, SlotAccumulator> = {};
   private currentDate: string;
   private saveTimer: ReturnType<typeof setInterval> | null = null;
+  private mode: 'accumulate' | 'snapshot';
 
-  constructor(dataDir: string) {
+  constructor(dataDir: string, mode: 'accumulate' | 'snapshot' = 'accumulate') {
     this.dataDir = dataDir;
+    this.mode = mode;
     this.currentDate = todayDateStr();
     this.load();
     // Persist every 60 seconds
@@ -51,11 +53,16 @@ export class GridHistoryService {
     }
 
     const key = slotKey();
-    if (!this.accumulators[key]) {
-      this.accumulators[key] = { sum: 0, count: 0 };
+    if (this.mode === 'snapshot') {
+      // Store latest value only (e.g. for SOC percentage)
+      this.accumulators[key] = { sum: gridPowerW, count: 1 };
+    } else {
+      if (!this.accumulators[key]) {
+        this.accumulators[key] = { sum: 0, count: 0 };
+      }
+      this.accumulators[key].sum += gridPowerW;
+      this.accumulators[key].count += 1;
     }
-    this.accumulators[key].sum += gridPowerW;
-    this.accumulators[key].count += 1;
   }
 
   /** For testing: inject raw accumulator data for a slot */

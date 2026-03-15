@@ -32,6 +32,7 @@ COPY --from=build /app/packages/shared/package.json ./packages/shared/
 
 # Web built output (full .next, not standalone)
 COPY --from=build /app/packages/web/.next ./packages/web/.next
+COPY --from=build /app/packages/web/public ./packages/web/public
 COPY --from=build /app/packages/web/package.json ./packages/web/
 COPY --from=build /app/packages/web/next.config.ts ./packages/web/
 
@@ -43,12 +44,13 @@ COPY package.json pnpm-workspace.yaml ./
 
 COPY <<'EOF' /app/start.sh
 #!/bin/bash
+cd /app/packages/web && npx next start --port 3000 &
+sleep 1
 node /app/packages/api/dist/index.js &
-cd /app/packages/web && npx next start --port 3001 &
 wait -n
 exit $?
 EOF
 RUN chmod +x /app/start.sh
 
-EXPOSE 3001 3002
+EXPOSE 3001
 CMD ["/app/start.sh"]

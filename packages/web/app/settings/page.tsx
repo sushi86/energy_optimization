@@ -209,17 +209,25 @@ export default function SettingsPage() {
             />
           </button>
         </div>
+        {push.error && (
+          <p className="mt-2 text-xs text-red-400">{push.error}</p>
+        )}
         {push.subscribed && (
-          <button
-            onClick={() => {
-              fetch('/api/push/test', { method: 'POST' })
-                .then(() => showMessage('Test-Notification gesendet'))
-                .catch(() => showMessage('Fehler beim Senden'));
-            }}
-            className="mt-3 px-4 py-1.5 rounded-lg text-xs font-medium bg-[var(--bg-card-hover)] text-[var(--text-secondary)] hover:text-[var(--text-primary)] border border-[var(--border)] transition-colors"
-          >
-            Test senden
-          </button>
+          <div className="mt-3 flex gap-2 flex-wrap">
+            {(['simple', 'morning', 'evening'] as const).map((type) => (
+              <button
+                key={type}
+                onClick={() => {
+                  fetch(`/api/push/test?type=${type}`, { method: 'POST' })
+                    .then(() => showMessage('Test-Notification gesendet'))
+                    .catch(() => showMessage('Fehler beim Senden'));
+                }}
+                className="px-4 py-1.5 rounded-lg text-xs font-medium bg-[var(--bg-card-hover)] text-[var(--text-secondary)] hover:text-[var(--text-primary)] border border-[var(--border)] transition-colors"
+              >
+                {{ simple: 'Test', morning: 'Morgen-Briefing', evening: 'Tages-Zusammenfassung' }[type]}
+              </button>
+            ))}
+          </div>
         )}
       </div>
 

@@ -1,17 +1,8 @@
 import { energyEvents, type MorningBriefingEvent, type ProductionEndedEvent } from './energy-events.js';
 import type { PushService } from './push-service.js';
 
-function formatHour(hour: number | null): string {
-  if (hour == null) return '–';
-  return `~${hour}:00`;
-}
-
 function formatKwh(kwh: number): string {
   return kwh.toFixed(1);
-}
-
-function formatCent(cent: number): string {
-  return cent.toFixed(0);
 }
 
 export class NotificationService {
@@ -23,34 +14,22 @@ export class NotificationService {
 
   private handleMorningBriefing(event: MorningBriefingEvent): void {
     const { chargePlan, currentSoc } = event;
-
-    const totalRevenue = chargePlan.totalRevenueFixedCent + chargePlan.totalRevenueMarketCent;
-    const body = [
-      `Prognose: ${formatKwh(chargePlan.slots.reduce((s, sl) => s + sl.forecastW * 0.25 / 1000, 0))} kWh`,
-      `Einspeisung: ${formatKwh(chargePlan.totalFeedInKwh)} kWh`,
-      `Akku: ${currentSoc.toFixed(0)}% → ${chargePlan.slots.at(-1)?.estimatedSoc.toFixed(0) ?? '–'}% (voll ${formatHour(chargePlan.estimatedFullHour)})`,
-      `Erlös: ~${formatCent(totalRevenue)} ct`,
-    ].join('\n');
+    const totalPvKwh = chargePlan.slots.reduce((s, sl) => s + sl.forecastW * 0.25 / 1000, 0);
 
     void this.pushService.sendNotification({
       title: 'Morgen-Briefing',
-      body,
+      body: `☀️ ${formatKwh(totalPvKwh)} kWh · ➡️ ${formatKwh(chargePlan.totalFeedInKwh)} kWh · 🔋 ${currentSoc.toFixed(0)}%`,
       url: '/scenario-decision',
       tag: 'morning-briefing',
     });
   }
 
   private handleProductionEnded(event: ProductionEndedEvent): void {
-    const totalRevenue = event.revenueFixedCent + event.revenueMarketCent;
-    const body = [
-      `PV: ${formatKwh(event.totalYieldKwh)} kWh | Eingespeist: ${formatKwh(event.feedInKwh)} kWh`,
-      `Akku: ${event.finalSoc.toFixed(0)}%`,
-      `Erlös: ${formatCent(event.revenueFixedCent)} ct EEG + ${formatCent(event.revenueMarketCent)} ct Börse = ${formatCent(totalRevenue)} ct`,
-    ].join('\n');
+    const totalRevenueEur = ((event.revenueFixedCent + event.revenueMarketCent) / 100).toFixed(2);
 
     void this.pushService.sendNotification({
       title: 'Tages-Zusammenfassung',
-      body,
+      body: `☀️ ${formatKwh(event.totalYieldKwh)} kWh · ➡️ ${formatKwh(event.feedInKwh)} kWh · 💵 ${totalRevenueEur}€`,
       url: '/',
       tag: 'evening-summary',
     });

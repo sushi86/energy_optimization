@@ -62,12 +62,12 @@ export class PushService {
         try {
           await webPush.sendNotification(sub, jsonPayload);
         } catch (err: unknown) {
-          const statusCode = (err as { statusCode?: number }).statusCode;
+          const pushErr = err as { statusCode?: number; body?: string; message?: string };
+          const statusCode = pushErr.statusCode;
           if (statusCode === 410 || statusCode === 404) {
-            // Subscription expired or not found
             expiredEndpoints.push(sub.endpoint);
           } else {
-            console.error('[push] Send error:', (err as Error).message);
+            console.error(`[push] Send error: status=${statusCode} body=${pushErr.body} msg=${pushErr.message}`);
           }
         }
       }),

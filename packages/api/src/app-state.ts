@@ -51,6 +51,7 @@ export class AppState {
   private correctionSamples: Array<{ slotMs: number; factor: number }> = [];
   private pvTracker: PvTracker | null = null;
   private gridHistoryForTracker: GridHistoryService | null = null;
+  private pvHistoryForTracker: GridHistoryService | null = null;
 
   private constructor(options: AppStateOptions) {
     this.config = { ...options };
@@ -208,6 +209,7 @@ export class AppState {
           chargePlan,
           prices,
           gridHistoryService: this.gridHistoryForTracker ?? undefined,
+          pvHistoryService: this.pvHistoryForTracker ?? undefined,
           feedInRateCentPerKwh: this.config.feedInRateCentPerKwh,
         });
       } catch (e) {
@@ -232,9 +234,10 @@ export class AppState {
     }
   }
 
-  setPvTracker(tracker: PvTracker, gridHistory: GridHistoryService): void {
+  setPvTracker(tracker: PvTracker, gridHistory: GridHistoryService, pvHistory?: GridHistoryService): void {
     this.pvTracker = tracker;
     this.gridHistoryForTracker = gridHistory;
+    this.pvHistoryForTracker = pvHistory ?? null;
   }
 
   getConfig(): AppStateOptions {

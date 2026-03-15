@@ -51,7 +51,8 @@ async function main() {
   const gridHistoryService = new GridHistoryService(resolve(dataDir, 'grid-history'));
   const batteryHistoryService = new GridHistoryService(resolve(dataDir, 'battery-history'));
   const consumptionHistoryService = new GridHistoryService(resolve(dataDir, 'consumption-history'));
-  const socHistoryService = new GridHistoryService(resolve(dataDir, 'soc-history'));
+  const pvHistoryService = new GridHistoryService(resolve(dataDir, 'pv-history'));
+  const socHistoryService = new GridHistoryService(resolve(dataDir, 'soc-history'), 'snapshot');
 
   // Record power values on every MQTT state change
   appState.mqtt.on('stateChange', () => {
@@ -59,6 +60,7 @@ async function main() {
     gridHistoryService.recordSample(s.gridPower);
     batteryHistoryService.recordSample(s.batteryPower);
     consumptionHistoryService.recordSample(s.consumptionPower);
+    pvHistoryService.recordSample(s.pvPower);
     socHistoryService.recordSample(s.batterySoc);
   });
 
@@ -95,12 +97,12 @@ async function main() {
   const pushService = new PushService(dataDir);
   const pvTracker = new PvTracker();
   new NotificationService(pushService);
-  appState.setPvTracker(pvTracker, gridHistoryService);
+  appState.setPvTracker(pvTracker, gridHistoryService, pvHistoryService);
 
-  const server = buildServer({ appState, inexogyService, gridHistoryService, batteryHistoryService, consumptionHistoryService, socHistoryService, nibePoller, wallboxPoller, pushService });
-  await server.listen({ port: 3002, host: '0.0.0.0' });
+  const server = buildServer({ appState, inexogyService, gridHistoryService, batteryHistoryService, consumptionHistoryService, socHistoryService, pvHistoryService, nibePoller, wallboxPoller, pushService });
+  await server.listen({ port: 3001, host: '0.0.0.0' });
 
-  console.log('[energy-control] Server running on http://0.0.0.0:3002');
+  console.log('[energy-control] Server running on http://0.0.0.0:3001');
 
   const shutdown = async () => {
     console.log('[energy-control] Shutting down...');
@@ -109,6 +111,7 @@ async function main() {
     gridHistoryService.stop();
     batteryHistoryService.stop();
     consumptionHistoryService.stop();
+    pvHistoryService.stop();
     socHistoryService.stop();
     nibePoller?.stop();
     wallboxPoller?.stop();

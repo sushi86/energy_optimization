@@ -24,11 +24,8 @@ export function initVapid(dataDir: string): VapidKeys {
     console.log('[vapid] Generated new VAPID keys');
   }
 
-  webPush.setVapidDetails(
-    'mailto:energy-control@localhost',
-    vapidKeys.publicKey,
-    vapidKeys.privateKey,
-  );
+  const subject = process.env.VAPID_SUBJECT ?? 'mailto:energy@example.com';
+  webPush.setVapidDetails(subject, vapidKeys.publicKey, vapidKeys.privateKey);
 
   return vapidKeys;
 }

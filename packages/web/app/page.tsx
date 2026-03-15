@@ -1116,7 +1116,7 @@ export default function Dashboard() {
   const [gridHistory, setGridHistory] = useState<GridHistorySlot[]>([]);
   const [batteryHistory, setBatteryHistory] = useState<GridHistorySlot[]>([]);
   const [consumptionHistory, setConsumptionHistory] = useState<GridHistorySlot[]>([]);
-  const [socHistory, setSocHistory] = useState<{ time: string; avgSoc: number }[]>([]);
+  const [socHistory, setSocHistory] = useState<{ time: string; soc: number }[]>([]);
   const [manualSetpoint, setManualSetpoint] = useState(-5000);
   const [modeOverride, setModeOverride] = useState<string | null>(null);
   const [hoveredSlot, setHoveredSlot] = useState<number | null>(null);
@@ -1206,6 +1206,12 @@ export default function Dashboard() {
         .then((r) => r.json())
         .then((data) => {
           if (Array.isArray(data?.slots)) setConsumptionHistory(data.slots);
+        })
+        .catch(() => {});
+      fetch('/api/soc/history')
+        .then((r) => r.json())
+        .then((data) => {
+          if (Array.isArray(data?.slots)) setSocHistory(data.slots);
         })
         .catch(() => {});
     };
@@ -1306,7 +1312,7 @@ export default function Dashboard() {
   const actualSoc = useMemo(() => {
     const map = new Map<string, number>();
     for (const slot of socHistory) {
-      map.set(slot.time, slot.avgSoc);
+      map.set(slot.time, slot.soc);
     }
     return map;
   }, [socHistory]);
