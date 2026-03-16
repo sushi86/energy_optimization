@@ -49,6 +49,8 @@ function formatEnergy(wh: number): string {
   return wh.toLocaleString('de-DE', { maximumFractionDigits: 0 }) + ' Wh';
 }
 
+const MULTIPLUS_RATED_POWER_W = 5000;
+
 const modeColors: Record<string, string> = {
   auto: 'bg-[#10EFD8]/20 text-[#10EFD8] border-[#10EFD8]/30',
   manual: 'bg-yellow-500/20 text-yellow-400 border-yellow-500/30',
@@ -1272,6 +1274,7 @@ export default function Dashboard() {
   const gridPower = status?.grid?.power ?? 0;
   const batteryPower = status?.battery?.power ?? 0;
   const batterySoc = status?.battery?.soc ?? 0;
+  const inverterPhases = status?.inverter?.phases ?? { L1: 0, L2: 0, L3: 0 };
   const controller = status?.controller;
   const mpptTemperatureC = status?.mpptTemperatureC ?? null;
   const heatPumpPowerW = status?.heatPumpPowerW ?? null;
@@ -1387,7 +1390,7 @@ export default function Dashboard() {
       </header>
 
       {/* Main Cards */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 mb-8">
+      <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 mb-4">
         {/* PV Power */}
         <div className="rounded-xl border border-[var(--border)] bg-[var(--bg-card)] p-5">
           <p className="text-sm text-[var(--text-secondary)] mb-1">PV-Leistung</p>
@@ -1415,6 +1418,44 @@ export default function Dashboard() {
           </div>
           <p className="text-3xl font-bold">{formatPower(consumption)}</p>
         </div>
+
+        {/* Multiplus */}
+        <div className="rounded-xl border border-[var(--border)] bg-[var(--bg-card)] p-5">
+          <p className="text-sm text-[var(--text-secondary)] mb-3">Multiplus</p>
+          <div className="flex flex-col gap-2">
+            {(['L1', 'L2', 'L3'] as const).map((phase) => {
+              const watts = inverterPhases[phase];
+              const percent = Math.round(Math.abs(watts) / MULTIPLUS_RATED_POWER_W * 100);
+              const isOverload = percent > 100;
+              const color = isOverload ? '#f87171' : 'var(--accent)';
+              return (
+                <div key={phase}>
+                  <div className="flex justify-between mb-1">
+                    <span className="text-xs text-[var(--text-secondary)]">{phase}</span>
+                    <span className="text-xs">
+                      <span className="text-[var(--text-primary)]">{formatPower(watts)}</span>
+                      {' · '}
+                      <span style={{ color }}>{percent}%</span>
+                    </span>
+                  </div>
+                  <div className="h-1 rounded-full bg-[var(--border)] overflow-hidden">
+                    <div
+                      className="h-full rounded-full transition-all duration-500"
+                      style={{
+                        width: `${Math.min(100, percent)}%`,
+                        backgroundColor: color,
+                      }}
+                    />
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      </div>
+
+      {/* Row 2: Grid + Battery */}
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 mb-8">
 
         {/* Grid */}
         <div className="rounded-xl border border-[var(--border)] bg-[var(--bg-card)] p-5">
