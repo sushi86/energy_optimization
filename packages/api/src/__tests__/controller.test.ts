@@ -698,6 +698,7 @@ describe('Controller', () => {
           revenueMarketCent: 0,
           clippingW: 0,
           consumptionW: 300,
+          priceMwh: null,
         }],
         intervalMinutes: 15,
         totalFeedInKwh: 5,
