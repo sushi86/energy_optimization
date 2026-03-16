@@ -60,6 +60,13 @@ export interface SystemStatus {
   grid: { power: number; setpoint: number };
   battery: { power: number; soc: number };
   consumption: { power: number };
+  inverter?: {
+    phases: {
+      L1: number;
+      L2: number;
+      L3: number;
+    };
+  };
   controller: { mode: string; activeSetpoint: number; reason?: string; details?: ControllerDetails | null };
   batteryCapacityKwh?: number;
   priceOptimizationEnabled?: boolean;
