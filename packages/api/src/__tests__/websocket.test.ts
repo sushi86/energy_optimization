@@ -100,4 +100,38 @@ describe('WebSocket', () => {
     const lastMsg = messages[messages.length - 1] as Record<string, unknown>;
     expect(lastMsg).toHaveProperty('pv');
   });
+
+  it('broadcasts inverter phase data', async () => {
+    const addr = app.server.address();
+    const port = typeof addr === 'object' && addr ? addr.port : 0;
+
+    const ws = new WebSocket(`ws://localhost:${port}/ws`);
+
+    const messages: unknown[] = [];
+    await new Promise<void>((resolve) => {
+      ws.on('open', () => resolve());
+    });
+
+    ws.on('message', (data) => {
+      messages.push(JSON.parse(data.toString()));
+    });
+
+    // Trigger consumption update on L1
+    const topic = `N/${DEVICE_ID}/system/0/Ac/Consumption/L1/Power`;
+    broker.publish(
+      { topic, payload: Buffer.from(JSON.stringify({ value: 3000 })), cmd: 'publish', qos: 0, dup: false, retain: false },
+      () => {}
+    );
+
+    await new Promise((r) => setTimeout(r, 700));
+    ws.close();
+
+    expect(messages.length).toBeGreaterThan(0);
+    const lastMsg = messages[messages.length - 1] as Record<string, unknown>;
+    expect(lastMsg).toHaveProperty('inverter');
+    const inverter = lastMsg.inverter as { phases: { L1: number; L2: number; L3: number } };
+    expect(inverter.phases).toHaveProperty('L1');
+    expect(inverter.phases).toHaveProperty('L2');
+    expect(inverter.phases).toHaveProperty('L3');
+  });
 });

@@ -173,6 +173,7 @@ export function buildServer(options: ServerOptions = {}): FastifyInstance {
         grid: { power: s.gridPower, setpoint: s.gridSetpoint },
         battery: { power: s.batteryPower, soc: s.batterySoc },
         consumption: { power: s.consumptionPower },
+        inverter: { phases: state.mqtt.getInverterPhases() },
         controller: {
           mode: state.controller.getMode(),
           activeSetpoint: s.gridSetpoint,
