@@ -93,6 +93,37 @@ describe('MqttService', () => {
     expect(service.getState().consumptionPower).toBe(3000);
   });
 
+  it('calculates inverter phases from consumption minus grid', async () => {
+    service = new MqttService({
+      url: `tcp://localhost:${port}`,
+      deviceId: DEVICE_ID,
+    });
+    await service.start();
+
+    // Publish consumption: L1=3000, L2=2000, L3=4000
+    for (const [phase, value] of [['L1', 3000], ['L2', 2000], ['L3', 4000]] as const) {
+      const topic = `N/${DEVICE_ID}/system/0/Ac/Consumption/${phase}/Power`;
+      broker.publish(
+        { topic, payload: Buffer.from(JSON.stringify({ value })), cmd: 'publish', qos: 0, dup: false, retain: false },
+        () => {}
+      );
+    }
+
+    // Publish grid: L1=500, L2=-1000, L3=1500
+    for (const [phase, value] of [['L1', 500], ['L2', -1000], ['L3', 1500]] as const) {
+      const topic = `N/${DEVICE_ID}/system/0/Ac/Grid/${phase}/Power`;
+      broker.publish(
+        { topic, payload: Buffer.from(JSON.stringify({ value })), cmd: 'publish', qos: 0, dup: false, retain: false },
+        () => {}
+      );
+    }
+
+    await new Promise((r) => setTimeout(r, 100));
+
+    const phases = service.getInverterPhases();
+    expect(phases).toEqual({ L1: 2500, L2: 3000, L3: 2500 });
+  });
+
   it('writes grid setpoint via MQTT', async () => {
     service = new MqttService({
       url: `tcp://localhost:${port}`,

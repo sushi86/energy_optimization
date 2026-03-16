@@ -191,6 +191,14 @@ export class MqttService extends EventEmitter {
     };
   }
 
+  getInverterPhases(): { L1: number; L2: number; L3: number } {
+    return {
+      L1: this.consumptionPhases['L1'] - this.gridPhases['L1'],
+      L2: this.consumptionPhases['L2'] - this.gridPhases['L2'],
+      L3: this.consumptionPhases['L3'] - this.gridPhases['L3'],
+    };
+  }
+
   async stop(): Promise<void> {
     if (this.keepaliveInterval) clearInterval(this.keepaliveInterval);
     if (this.client) {
