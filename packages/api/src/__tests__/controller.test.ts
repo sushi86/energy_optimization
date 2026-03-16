@@ -544,6 +544,7 @@ describe('Controller', () => {
         forecastCorrectionFactor: 1,
         negativeStreak6hActive: false,
         negativeStreak6hDeductionCent: 0,
+        debug: { batteryNeedKwh: 0, totalClippingKwh: 0, voluntaryNeedKwh: 0, totalNetSurplusKwh: 0, surplusRatio: Infinity, tightForecast: false, priceOptCandidateCount: 0 },
       };
       const result = ctrl.computeSetpoint(state, makeForecast(30), 25, [], plan);
       expect(result.details).not.toBeNull();
@@ -577,6 +578,7 @@ describe('Controller', () => {
             revenueMarketCent: 0,
             clippingW: 0,
             consumptionW: 300,
+            priceMwh: null,
           },
           {
             hour: slot2Time.getHours(),
@@ -590,6 +592,7 @@ describe('Controller', () => {
             revenueMarketCent: 0,
             clippingW: 0,
             consumptionW: 300,
+            priceMwh: null,
           },
         ],
         intervalMinutes: 15,
@@ -602,6 +605,7 @@ describe('Controller', () => {
         forecastCorrectionFactor: 1,
         negativeStreak6hActive: false,
         negativeStreak6hDeductionCent: 0,
+        debug: { batteryNeedKwh: 0, totalClippingKwh: 0, voluntaryNeedKwh: 0, totalNetSurplusKwh: 0, surplusRatio: Infinity, tightForecast: false, priceOptCandidateCount: 0 },
       };
 
       const result = ctrl.computeSetpoint(state, makeForecast(30, forecastHours), 25, [], plan);
@@ -635,6 +639,7 @@ describe('Controller', () => {
             revenueMarketCent: 0,
             clippingW: 0,
             consumptionW: 300,
+            priceMwh: null,
           },
           {
             hour: slot2Time.getHours(),
@@ -648,6 +653,7 @@ describe('Controller', () => {
             revenueMarketCent: 0,
             clippingW: 0,
             consumptionW: 300,
+            priceMwh: null,
           },
         ],
         intervalMinutes: 15,
@@ -660,6 +666,7 @@ describe('Controller', () => {
         forecastCorrectionFactor: 1,
         negativeStreak6hActive: false,
         negativeStreak6hDeductionCent: 0,
+        debug: { batteryNeedKwh: 0, totalClippingKwh: 0, voluntaryNeedKwh: 0, totalNetSurplusKwh: 0, surplusRatio: Infinity, tightForecast: false, priceOptCandidateCount: 0 },
       };
 
       const result = ctrl.computeSetpoint(state, makeForecast(30, forecastHours), 25, [], plan);
@@ -702,6 +709,7 @@ describe('Controller', () => {
         forecastCorrectionFactor: 1,
         negativeStreak6hActive: false,
         negativeStreak6hDeductionCent: 0,
+        debug: { batteryNeedKwh: 0, totalClippingKwh: 0, voluntaryNeedKwh: 0, totalNetSurplusKwh: 0, surplusRatio: Infinity, tightForecast: false, priceOptCandidateCount: 0 },
       };
 
       const result = ctrl.computeSetpoint(state, makeForecast(30, forecastHours), 25, [], plan);
