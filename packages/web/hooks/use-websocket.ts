@@ -66,6 +66,7 @@ export interface SystemStatus {
   forecastCorrectionOverride?: number | null;
   regulation?: { lastTime: string; intervalMs: number };
   chargePlan?: ChargePlan | null;
+  priceError?: string | null;
   mpptTemperatureC?: number | null;
   heatPumpPowerW?: number | null;
   wallboxPowerW?: number | null;
