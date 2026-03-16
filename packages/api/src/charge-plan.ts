@@ -31,6 +31,8 @@ export interface ChargePlanSlot {
   revenueMarketCent: number;
   clippingW: number;
   consumptionW: number;
+  /** Day-ahead market price in EUR/MWh for this slot (null = no price data) */
+  priceMwh: number | null;
 }
 
 export interface ChargePlan {
@@ -47,6 +49,16 @@ export interface ChargePlan {
   negativeStreak6hActive: boolean;
   /** Cents deducted from EEG revenue due to §51 negative price streak rule */
   negativeStreak6hDeductionCent: number;
+  /** Debug info for charge planning decisions */
+  debug: {
+    batteryNeedKwh: number;
+    totalClippingKwh: number;
+    voluntaryNeedKwh: number;
+    totalNetSurplusKwh: number;
+    surplusRatio: number;
+    tightForecast: boolean;
+    priceOptCandidateCount: number;
+  };
 }
 
 /** Find the price entry matching a given unix timestamp (floored to 15min). */
@@ -150,10 +162,11 @@ export function computeChargePlan(
   });
 
   // --- Battery need & clipping ---
-  // Safety charge (below minSoc) is handled as mandatory in the simulation.
-  // Voluntary charge only covers the gap from max(currentSoc, minSoc) to target.
-  const effectiveStartSoc = Math.max(currentSoc, config.minSocPercent);
-  const batteryNeedKwh = Math.max(0, (targetSocPercent / 100 - effectiveStartSoc / 100) * batteryCapacityKwh);
+  // Total need from actual SOC to target. When SOC < minSoc, the safety charge
+  // in the simulation will override early voluntary slots, consuming their surplus.
+  // By using currentSoc (not effectiveStartSoc), we allocate enough voluntary charge
+  // to compensate for the safety-overridden slots and still reach targetSoc.
+  const batteryNeedKwh = Math.max(0, (targetSocPercent / 100 - currentSoc / 100) * batteryCapacityKwh);
   const totalClippingKwh = analysis.reduce((sum, s) => sum + Math.max(0, s.clippingW) * ih / 1000, 0);
   // When allowFeedInNegativePrice is false, negative-price slots always charge
   // full surplus in simulation, so subtract their expected contribution to avoid
@@ -177,6 +190,7 @@ export function computeChargePlan(
 
   // --- Assign voluntary charge per slot ---
   const voluntaryChargeW = new Array<number>(analysis.length).fill(0);
+  let priceOptCandidateCount = 0;
 
   if (tightForecast) {
     // Tight forecast: charge all surplus — the controller will override any
@@ -195,26 +209,38 @@ export function computeChargePlan(
         .filter(s => s.voluntarySurplusW > 0 && s.price != null && (s.price >= 0 || config.allowFeedInNegativePrice))
         .map(s => ({ idx: s.idx, voluntarySurplusW: s.voluntarySurplusW, price: s.price! }))
         .sort((a, b) => a.price - b.price); // cheapest first
+      priceOptCandidateCount = candidates.length;
 
-      // First pass: assign up to preferredMaxChargeW per slot
-      let remaining = voluntaryNeedKwh;
-      for (const c of candidates) {
-        if (remaining <= 0) break;
-        const maxW = Math.min(c.voluntarySurplusW, preferredMaxChargeW);
-        const chargeW = Math.min(maxW, remaining / ih * 1000);
-        voluntaryChargeW[c.idx] = chargeW;
-        remaining -= chargeW * ih / 1000;
-      }
-
-      // Second pass: if capped charge wasn't enough, allow above preferredMaxChargeW
-      if (remaining > 0.05) {
+      if (candidates.length > 0) {
+        // First pass: assign up to preferredMaxChargeW per slot
+        let remaining = voluntaryNeedKwh;
         for (const c of candidates) {
           if (remaining <= 0) break;
-          const current = voluntaryChargeW[c.idx];
-          const additional = Math.min(c.voluntarySurplusW - current, remaining / ih * 1000);
-          if (additional > 0) {
-            voluntaryChargeW[c.idx] = current + additional;
-            remaining -= additional * ih / 1000;
+          const maxW = Math.min(c.voluntarySurplusW, preferredMaxChargeW);
+          const chargeW = Math.min(maxW, remaining / ih * 1000);
+          voluntaryChargeW[c.idx] = chargeW;
+          remaining -= chargeW * ih / 1000;
+        }
+
+        // Second pass: if capped charge wasn't enough, allow above preferredMaxChargeW
+        if (remaining > 0.05) {
+          for (const c of candidates) {
+            if (remaining <= 0) break;
+            const current = voluntaryChargeW[c.idx];
+            const additional = Math.min(c.voluntarySurplusW - current, remaining / ih * 1000);
+            if (additional > 0) {
+              voluntaryChargeW[c.idx] = current + additional;
+              remaining -= additional * ih / 1000;
+            }
+          }
+        }
+      } else {
+        // No price data available — fall back to spreading evenly
+        const surplusSlots = analysis.filter(s => s.voluntarySurplusW > 0);
+        if (surplusSlots.length > 0) {
+          const perSlotKwh = voluntaryNeedKwh / surplusSlots.length;
+          for (const s of surplusSlots) {
+            voluntaryChargeW[s.idx] = Math.min(perSlotKwh / ih * 1000, s.voluntarySurplusW);
           }
         }
       }
@@ -248,8 +274,17 @@ export function computeChargePlan(
     let feedInW: number;
 
     if (s.surplusW < 0) {
-      // Deficit: consumption exceeds PV — drain battery
-      chargeW = s.surplusW; // negative = discharge
+      // Deficit: consumption exceeds PV — drain battery, but not below minSoc
+      if (soc <= config.minSocPercent) {
+        // Battery at or below minimum — grid covers deficit, no discharge
+        chargeW = 0;
+      } else {
+        // Discharge but cap so SOC doesn't drop below minSocPercent
+        const maxDischargeKwh = ((soc - config.minSocPercent) / 100) * batteryCapacityKwh;
+        const deficitKwh = Math.abs(s.surplusW) * ih / 1000;
+        const actualDischargeKwh = Math.min(maxDischargeKwh, deficitKwh);
+        chargeW = -(actualDischargeKwh / ih * 1000);
+      }
       feedInW = 0;
     } else if (soc < config.minSocPercent) {
       // Safety: SOC below minimum — charge from surplus before feeding in
@@ -287,8 +322,9 @@ export function computeChargePlan(
       if (estimatedFullHour === null) estimatedFullHour = hour;
     }
 
-    // Update SOC: clamp between minSocPercent and targetSocPercent
-    soc = Math.max(config.minSocPercent, Math.min(targetSocPercent,
+    // Update SOC: clamp between 0 and targetSocPercent
+    // (Don't clamp to minSocPercent — actual SOC can be below it)
+    soc = Math.max(0, Math.min(targetSocPercent,
       soc + ((chargeW * ih / 1000) / batteryCapacityKwh) * 100));
 
     // Revenue calculation
@@ -312,6 +348,7 @@ export function computeChargePlan(
       revenueMarketCent: Math.round(revenueMarketCent * 100) / 100,
       clippingW: Math.round(s.clippingW),
       consumptionW: Math.round(s.consumptionW),
+      priceMwh: s.price,
     });
   }
 
@@ -376,5 +413,14 @@ export function computeChargePlan(
     forecastCorrectionFactor: Math.round(forecastCorrectionFactor * 100) / 100,
     negativeStreak6hActive: negativeStreak6hDeductionCent > 0,
     negativeStreak6hDeductionCent: Math.round(negativeStreak6hDeductionCent * 100) / 100,
+    debug: {
+      batteryNeedKwh: Math.round(batteryNeedKwh * 100) / 100,
+      totalClippingKwh: Math.round(totalClippingKwh * 100) / 100,
+      voluntaryNeedKwh: Math.round(voluntaryNeedKwh * 100) / 100,
+      totalNetSurplusKwh: Math.round(totalNetSurplusKwh * 100) / 100,
+      surplusRatio: Math.round(surplusRatio * 100) / 100,
+      tightForecast,
+      priceOptCandidateCount,
+    },
   };
 }

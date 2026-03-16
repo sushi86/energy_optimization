@@ -143,9 +143,15 @@ export class AppState {
     // Fetch prices (optional — don't block regulation if it fails)
     let prices: Array<{ timestamp: number; price: number | null }> = [];
     try {
-      const { fetchPrices } = await import('./server.js');
+      const { fetchPrices, setLastPriceError } = await import('./server.js');
       prices = await fetchPrices();
-    } catch { /* price optimization is optional */ }
+      setLastPriceError(null);
+    } catch (e) {
+      try {
+        const { setLastPriceError } = await import('./server.js');
+        setLastPriceError((e as Error).message);
+      } catch { /* ignore */ }
+    }
 
     // --- Auto correction factor averaging over 15-min slot ---
     // When in auto mode, compute the instantaneous factor, accumulate samples

@@ -15,6 +15,7 @@ import { initVapid } from './vapid.js';
 import { PushService } from './push-service.js';
 import { PvTracker } from './pv-tracker.js';
 import { NotificationService } from './notification-service.js';
+import { DailySummaryService } from './daily-summary-service.js';
 
 async function main() {
   const config = loadConfig();
@@ -97,9 +98,10 @@ async function main() {
   const pushService = new PushService(dataDir);
   const pvTracker = new PvTracker();
   new NotificationService(pushService);
+  const dailySummaryService = new DailySummaryService(resolve(dataDir, 'daily-summary'));
   appState.setPvTracker(pvTracker, gridHistoryService, pvHistoryService);
 
-  const server = buildServer({ appState, inexogyService, gridHistoryService, batteryHistoryService, consumptionHistoryService, socHistoryService, pvHistoryService, nibePoller, wallboxPoller, pushService });
+  const server = buildServer({ appState, inexogyService, gridHistoryService, batteryHistoryService, consumptionHistoryService, socHistoryService, pvHistoryService, nibePoller, wallboxPoller, pushService, dailySummaryService });
   await server.listen({ port: 3001, host: '0.0.0.0' });
 
   console.log('[energy-control] Server running on http://0.0.0.0:3001');

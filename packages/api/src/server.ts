@@ -14,6 +14,7 @@ import type { NibePoller } from './nibe-poller.js';
 import type { WallboxPoller } from './wallbox-poller.js';
 import type { PushService } from './push-service.js';
 import { getVapidPublicKey } from './vapid.js';
+import type { DailySummaryService } from './daily-summary-service.js';
 
 export interface ServerOptions {
   testing?: boolean;
@@ -28,6 +29,7 @@ export interface ServerOptions {
   nibePoller?: NibePoller;
   wallboxPoller?: WallboxPoller;
   pushService?: PushService;
+  dailySummaryService?: DailySummaryService;
 }
 
 export interface PriceEntry {
@@ -65,7 +67,7 @@ export async function fetchPrices(): Promise<PriceEntry[]> {
     return priceCache.entries;
   }
 
-  const res = await fetch(`https://api.energy-charts.info/price?bzn=DE-LU`);
+  const res = await fetch(`https://api.energy-charts.info/price?bzn=DE-LU&start=${today}&end=${today}`);
   if (!res.ok) throw new Error(`Energy Charts API HTTP ${res.status}`);
 
   const data = await res.json();
@@ -77,9 +79,22 @@ export async function fetchPrices(): Promise<PriceEntry[]> {
     entries.push({ timestamp: timestamps[i], price: prices[i] ?? null });
   }
 
+  // Validate: prices must cover today (at least some non-null entries for today)
+  const todayStartSec = Math.floor(new Date(today + 'T00:00:00').getTime() / 1000);
+  const todayEndSec = todayStartSec + 86400;
+  const todayPrices = entries.filter(e => e.timestamp >= todayStartSec && e.timestamp < todayEndSec && e.price != null);
+  if (todayPrices.length === 0) {
+    throw new Error(`Keine Preise für heute (${today}) verfügbar`);
+  }
+
   priceCache = { date: today, entries, fetchedAt: Date.now() };
   return entries;
 }
+
+/** Returns last successfully fetched price error, if any */
+let lastPriceError: string | null = null;
+export function getLastPriceError(): string | null { return lastPriceError; }
+export function setLastPriceError(err: string | null): void { lastPriceError = err; }
 
 export function buildServer(options: ServerOptions = {}): FastifyInstance {
   const app = Fastify({ logger: !options.testing });
@@ -93,6 +108,7 @@ export function buildServer(options: ServerOptions = {}): FastifyInstance {
   const nibePoller = options.nibePoller;
   const wallboxPoller = options.wallboxPoller;
   const pushService = options.pushService;
+  const dailySummaryService = options.dailySummaryService;
   const pvSettingsPath = options.pvSettingsPath ?? resolve(dirname(fileURLToPath(import.meta.url)), '../../../data/pv-settings.json');
 
   // WebSocket support
@@ -123,28 +139,33 @@ export function buildServer(options: ServerOptions = {}): FastifyInstance {
       const config = state.getConfig();
 
       let chargePlanData: ReturnType<typeof computeChargePlan> | null = null;
-      try {
-        const vrmForecast = state.vrm.getForecast();
-        const solarForecast = state.forecastSolar.getForecast();
-        const ensemble = computeEnsembleForecast(vrmForecast, solarForecast);
-        const cachedPrices = priceCache?.entries ?? [];
-        chargePlanData = computeChargePlan(ensemble, cachedPrices, {
-          currentSoc: s.batterySoc,
-          batteryCapacityKwh: config.batteryCapacityKwh,
-          targetSocPercent: config.targetSocPercent,
-          minSocPercent: config.minSocPercent,
-          maxAcPowerW: config.maxAcPowerW,
-          feedInRateCentPerKwh: config.feedInRateCentPerKwh,
-          consumptionDayW: config.consumptionDayW,
-          consumptionNightW: config.consumptionNightW,
-          priceOptimization: config.priceOptimization,
-          allowFeedInNegativePrice: config.allowFeedInNegativePrice,
-          preferredMaxChargeW: config.preferredMaxChargeW,
-          actualPvPowerW: s.pvPower,
-          forecastCorrectionOverride: config.forecastCorrectionOverride,
-        });
-      } catch (e) {
-        console.error('[ws] chargePlan error:', (e as Error).message);
+      const hasPrices = priceCache != null && priceCache.date === new Date().toISOString().slice(0, 10) && priceCache.entries.length > 0;
+
+      // Only compute charge plan when prices are available (or price optimization is off)
+      if (hasPrices || !config.priceOptimization) {
+        try {
+          const vrmForecast = state.vrm.getForecast();
+          const solarForecast = state.forecastSolar.getForecast();
+          const ensemble = computeEnsembleForecast(vrmForecast, solarForecast);
+          const cachedPrices = hasPrices ? priceCache!.entries : [];
+          chargePlanData = computeChargePlan(ensemble, cachedPrices, {
+            currentSoc: s.batterySoc,
+            batteryCapacityKwh: config.batteryCapacityKwh,
+            targetSocPercent: config.targetSocPercent,
+            minSocPercent: config.minSocPercent,
+            maxAcPowerW: config.maxAcPowerW,
+            feedInRateCentPerKwh: config.feedInRateCentPerKwh,
+            consumptionDayW: config.consumptionDayW,
+            consumptionNightW: config.consumptionNightW,
+            priceOptimization: config.priceOptimization,
+            allowFeedInNegativePrice: config.allowFeedInNegativePrice,
+            preferredMaxChargeW: config.preferredMaxChargeW,
+            actualPvPowerW: s.pvPower,
+            forecastCorrectionOverride: config.forecastCorrectionOverride,
+          });
+        } catch (e) {
+          console.error('[ws] chargePlan error:', (e as Error).message);
+        }
       }
 
       const payload = JSON.stringify({
@@ -167,6 +188,7 @@ export function buildServer(options: ServerOptions = {}): FastifyInstance {
           intervalMs: state.getRegulationInfo().intervalMs,
         },
         chargePlan: chargePlanData,
+        priceError: config.priceOptimization && !hasPrices ? (lastPriceError ?? 'Preise werden geladen…') : null,
         mpptTemperatureC,
         heatPumpPowerW: nibePoller?.getPowerW() ?? null,
         wallboxPowerW: wallboxPoller?.getPowerW() ?? null,
@@ -442,8 +464,10 @@ export function buildServer(options: ServerOptions = {}): FastifyInstance {
   app.get('/api/prices', async (_request, reply) => {
     try {
       const entries = await fetchPrices();
+      lastPriceError = null;
       return { entries };
     } catch (err) {
+      lastPriceError = (err as Error).message;
       return reply.code(502).send({ error: (err as Error).message });
     }
   });
@@ -652,6 +676,25 @@ export function buildServer(options: ServerOptions = {}): FastifyInstance {
     } catch { /* optional */ }
 
     return { scenarios, currentFactor: config.forecastCorrectionOverride, autoFactor };
+  });
+
+  // --- Daily summary endpoints ---
+
+  app.get('/api/daily-summary', async (request) => {
+    if (!dailySummaryService) return { summaries: [] };
+    const query = request.query as { month?: string };
+    const all = dailySummaryService.getAllSummaries();
+    if (query.month && /^\d{4}-\d{2}$/.test(query.month)) {
+      return { summaries: all.filter(s => s.date.startsWith(query.month!)) };
+    }
+    return { summaries: all };
+  });
+
+  app.get('/api/daily-summary/:date', async (request) => {
+    if (!dailySummaryService) return { summary: null };
+    const { date } = request.params as { date: string };
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) return { summary: null };
+    return { summary: dailySummaryService.getSummary(date) };
   });
 
   // Proxy everything else to Next.js (running on port 3000 internally)

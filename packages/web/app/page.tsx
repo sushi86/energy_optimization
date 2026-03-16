@@ -1087,18 +1087,17 @@ function buildExportCsv(status: SystemStatus | null, prices: PriceEntry[]): stri
   const futureSlots = plan.slots.filter(s => new Date(s.timestamp) >= now);
   if (futureSlots.length === 0) return lines.join('\n');
 
-  // Build price lookup by timestamp
-  const priceMap = new Map<number, number>();
-  for (const p of prices) {
-    if (p.price !== null) priceMap.set(p.timestamp, p.price);
+  // Debug info from charge plan
+  const dbg = (plan as any).debug;
+  if (dbg) {
+    lines.push(`# debug: tightForecast=${dbg.tightForecast},priceOptCandidates=${dbg.priceOptCandidateCount},batteryNeedKwh=${dbg.batteryNeedKwh},voluntaryNeedKwh=${dbg.voluntaryNeedKwh},surplusRatio=${dbg.surplusRatio},totalClippingKwh=${dbg.totalClippingKwh},totalNetSurplusKwh=${dbg.totalNetSurplusKwh}`);
   }
 
   lines.push('time,forecastW,chargePowerW,feedInW,consumptionW,estSoc,revenueFixedCt,revenueMarketCt,priceMwh');
   for (const s of futureSlots) {
     const t = `${String(s.hour).padStart(2, '0')}:${String(s.minute).padStart(2, '0')}`;
-    const ts = Math.floor(new Date(s.timestamp).getTime() / 1000);
-    // Find price: exact match or hourly match
-    const price = priceMap.get(ts) ?? priceMap.get(ts - (ts % 3600)) ?? '';
+    // Use backend price (from findPrice in charge-plan.ts)
+    const price = (s as any).priceMwh ?? '';
     lines.push(`${t},${s.forecastW},${s.chargePowerW},${s.feedInPowerW},${s.consumptionW ?? 0},${s.estimatedSoc},${s.revenueFixedCent},${s.revenueMarketCent},${price}`);
   }
 
@@ -1598,7 +1597,7 @@ export default function Dashboard() {
       })()}
 
       {/* Price Chart */}
-      {prices.length > 0 && (() => {
+      {prices.length > 0 ? (() => {
         const priceStartTime = new Date(prices[0].timestamp * 1000);
         const priceStartStr = `${priceStartTime.getHours().toString().padStart(2, '0')}:${priceStartTime.getMinutes().toString().padStart(2, '0')}`;
         const nowForBezug = new Date();
@@ -1619,7 +1618,12 @@ export default function Dashboard() {
           <PriceChart data={prices} hoveredSlot={hoveredSlot} setHoveredSlot={setHoveredSlot} />
         </div>
         );
-      })()}
+      })() : status?.priceError ? (
+        <div className="rounded-xl border border-red-500/30 bg-red-500/5 p-5 mt-4">
+          <p className="text-sm text-red-400">Strompreise nicht verfügbar: {status.priceError}</p>
+          <p className="text-xs text-[var(--text-secondary)] mt-1">Ladeplanung deaktiviert bis Preise geladen werden können.</p>
+        </div>
+      ) : null}
 
       {/* Charge Plan Chart */}
       {status?.chargePlan && status.chargePlan.slots.length > 0 && (
@@ -1630,7 +1634,7 @@ export default function Dashboard() {
 
       {/* CSV Export */}
       {status?.chargePlan && (
-        <div className="flex justify-center mt-6 mb-8">
+        <div className="flex justify-center gap-3 mt-6 mb-8">
           <button
             onClick={() => {
               const csv = buildExportCsv(status, prices);
@@ -1660,6 +1664,16 @@ export default function Dashboard() {
             </svg>
             {csvCopied ? 'Kopiert!' : 'CSV exportieren'}
           </button>
+          <Link
+            href="/history"
+            className="flex items-center gap-2 px-4 py-2 rounded-lg border border-[var(--border)] bg-[var(--bg-card)] text-sm text-[var(--text-secondary)] hover:text-[var(--text-primary)] hover:border-[var(--text-secondary)] transition-colors"
+          >
+            <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+              <circle cx="12" cy="12" r="10" />
+              <polyline points="12 6 12 12 16 14" />
+            </svg>
+            Historie
+          </Link>
         </div>
       )}
     </div>
