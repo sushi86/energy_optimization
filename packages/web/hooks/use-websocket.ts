@@ -65,6 +65,8 @@ export interface SystemStatus {
       L1: number;
       L2: number;
       L3: number;
+      feedIn: { L1: number; L2: number; L3: number };
+      selfConsumption: { L1: number; L2: number; L3: number };
     };
   };
   controller: { mode: string; activeSetpoint: number; reason?: string; details?: ControllerDetails | null };

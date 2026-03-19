@@ -121,7 +121,14 @@ describe('MqttService', () => {
     await new Promise((r) => setTimeout(r, 100));
 
     const phases = service.getInverterPhases();
-    expect(phases).toEqual({ L1: 2500, L2: 3000, L3: 2500 });
+    // L1: consumption 3000 - grid 500 = 2500 (grid positive → all self-consumption)
+    // L2: consumption 2000 - grid -1000 = 3000 (grid negative → 1000 feed-in, 2000 self-consumption)
+    // L3: consumption 4000 - grid 1500 = 2500 (grid positive → all self-consumption)
+    expect(phases.L1).toBe(2500);
+    expect(phases.L2).toBe(3000);
+    expect(phases.L3).toBe(2500);
+    expect(phases.selfConsumption).toEqual({ L1: 2500, L2: 2000, L3: 2500 });
+    expect(phases.feedIn).toEqual({ L1: 0, L2: 1000, L3: 0 });
   });
 
   it('writes grid setpoint via MQTT', async () => {

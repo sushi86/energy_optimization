@@ -1272,7 +1272,7 @@ export default function Dashboard() {
   const gridPower = status?.grid?.power ?? 0;
   const batteryPower = status?.battery?.power ?? 0;
   const batterySoc = status?.battery?.soc ?? 0;
-  const inverterPhases = status?.inverter?.phases ?? { L1: 0, L2: 0, L3: 0 };
+  const inverterPhases = status?.inverter?.phases ?? { L1: 0, L2: 0, L3: 0, feedIn: { L1: 0, L2: 0, L3: 0 }, selfConsumption: { L1: 0, L2: 0, L3: 0 } };
   const controller = status?.controller;
   const mpptTemperatureC = status?.mpptTemperatureC ?? null;
   const heatPumpPowerW = status?.heatPumpPowerW ?? null;
@@ -1426,7 +1426,10 @@ export default function Dashboard() {
               const watts = inverterPhases[phase];
               const percent = watts > 0 ? Math.round(watts / multiplusRatedPowerW * 100) : 0;
               const isOverload = percent > 100;
-              const color = isOverload ? '#f87171' : 'var(--accent)';
+              const selfW = inverterPhases.selfConsumption?.[phase] ?? 0;
+              const feedW = inverterPhases.feedIn?.[phase] ?? 0;
+              const selfPct = watts > 0 ? Math.min(100, selfW / multiplusRatedPowerW * 100) : 0;
+              const feedPct = watts > 0 ? Math.min(Math.max(0, 100 - selfPct), feedW / multiplusRatedPowerW * 100) : 0;
               return (
                 <div key={phase}>
                   <div className="flex justify-between mb-1">
@@ -1434,15 +1437,22 @@ export default function Dashboard() {
                     <span className="text-xs">
                       <span className="text-[var(--text-primary)]">{formatPower(watts)}</span>
                       {' · '}
-                      <span style={{ color }}>{percent}%</span>
+                      <span style={{ color: isOverload ? '#f87171' : 'var(--accent)' }}>{percent}%</span>
                     </span>
                   </div>
-                  <div className="h-1 rounded-full bg-[var(--border)] overflow-hidden">
+                  <div className="h-1 rounded-full bg-[var(--border)] overflow-hidden flex">
                     <div
-                      className="h-full rounded-full transition-all duration-500"
+                      className="h-full transition-all duration-500"
                       style={{
-                        width: `${Math.min(100, percent)}%`,
-                        backgroundColor: color,
+                        width: `${selfPct}%`,
+                        backgroundColor: isOverload ? '#f87171' : 'var(--accent)',
+                      }}
+                    />
+                    <div
+                      className="h-full transition-all duration-500"
+                      style={{
+                        width: `${feedPct}%`,
+                        backgroundColor: '#facc15',
                       }}
                     />
                   </div>

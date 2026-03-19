@@ -191,12 +191,23 @@ export class MqttService extends EventEmitter {
     };
   }
 
-  getInverterPhases(): { L1: number; L2: number; L3: number } {
-    return {
-      L1: this.consumptionPhases['L1'] - this.gridPhases['L1'],
-      L2: this.consumptionPhases['L2'] - this.gridPhases['L2'],
-      L3: this.consumptionPhases['L3'] - this.gridPhases['L3'],
-    };
+  getInverterPhases(): { L1: number; L2: number; L3: number; feedIn: { L1: number; L2: number; L3: number }; selfConsumption: { L1: number; L2: number; L3: number } } {
+    const result = {} as { L1: number; L2: number; L3: number; feedIn: { L1: number; L2: number; L3: number }; selfConsumption: { L1: number; L2: number; L3: number } };
+    const feedIn = { L1: 0, L2: 0, L3: 0 };
+    const selfConsumption = { L1: 0, L2: 0, L3: 0 };
+    for (const phase of ['L1', 'L2', 'L3'] as const) {
+      const total = this.consumptionPhases[phase] - this.gridPhases[phase];
+      result[phase] = total;
+      if (total > 0) {
+        // grid negative = exporting, that portion is feed-in
+        const phaseExport = Math.max(0, -this.gridPhases[phase]);
+        feedIn[phase] = Math.min(phaseExport, total);
+        selfConsumption[phase] = total - feedIn[phase];
+      }
+    }
+    result.feedIn = feedIn;
+    result.selfConsumption = selfConsumption;
+    return result;
   }
 
   async stop(): Promise<void> {
