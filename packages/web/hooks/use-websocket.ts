@@ -74,6 +74,7 @@ export interface SystemStatus {
   priceOptimizationEnabled?: boolean;
   forecastCorrectionOverride?: number | null;
   multiplusRatedPowerW?: number;
+  pvPeakKwp?: number;
   regulation?: { lastTime: string; intervalMs: number };
   chargePlan?: ChargePlan | null;
   priceError?: string | null;

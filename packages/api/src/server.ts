@@ -191,6 +191,7 @@ export function buildServer(options: ServerOptions = {}): FastifyInstance {
         },
         chargePlan: chargePlanData,
         priceError: config.priceOptimization && !hasPrices ? (lastPriceError ?? 'Preise werden geladen…') : null,
+        pvPeakKwp: loadPvSettings(pvSettingsPath).kwp,
         mpptTemperatureC,
         heatPumpPowerW: nibePoller?.getPowerW() ?? null,
         wallboxPowerW: wallboxPoller?.getPowerW() ?? null,

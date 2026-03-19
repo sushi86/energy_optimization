@@ -48,10 +48,10 @@ function ScenarioChart({ slots }: { slots: ScenarioSlot[] }) {
     ...slots.map(s => (s.chargePowerW ?? 0) + (s.feedInPowerW ?? 0) + (s.consumptionW ?? 0)),
     1,
   );
-  const scaleSteps = [3000, 6000, 9000, 12000];
-  const maxPower = scaleSteps.find(s => peakW <= s) ?? 12000;
+  const scaleSteps = [3000, 6000, 9000, 12000, 15000, 18000];
+  const maxPower = scaleSteps.find(s => peakW <= s) ?? 18000;
   const maxKw = maxPower / 1000;
-  const step = maxKw <= 3 ? 1 : 2;
+  const step = maxKw <= 3 ? 1 : maxKw <= 9 ? 2 : 3;
   const gridLines: { kw: number; bottomPct: number }[] = [];
   for (let kw = step; kw < maxKw; kw += step) {
     gridLines.push({ kw, bottomPct: (kw / maxKw) * 100 });

@@ -542,7 +542,7 @@ function findPriceForSlot(prices: PriceEntry[], hour: number, minute: number): n
   return 0;
 }
 
-function ChargePlanChart({ plan, hoveredSlot, setHoveredSlot, actualFeedIn, actualBattery, actualConsumption, actualSoc, prices }: {
+function ChargePlanChart({ plan, hoveredSlot, setHoveredSlot, actualFeedIn, actualBattery, actualConsumption, actualSoc, prices, pvPeakKwp }: {
   plan: ChargePlan;
   hoveredSlot: number | null;
   setHoveredSlot: (i: number | null) => void;
@@ -551,6 +551,7 @@ function ChargePlanChart({ plan, hoveredSlot, setHoveredSlot, actualFeedIn, actu
   actualConsumption: Map<string, number>;
   actualSoc: Map<string, number>;
   prices: PriceEntry[];
+  pvPeakKwp?: number;
 }) {
 
   const [visibleSeries, setVisibleSeries] = useState({ charge: true, clipping: true, feedIn: true, consumption: true, soc: true });
@@ -622,12 +623,14 @@ function ChargePlanChart({ plan, hoveredSlot, setHoveredSlot, actualFeedIn, actu
     ...actualStackPeaks,
     1,
   );
-  const scaleSteps = [3000, 6000, 9000, 12000];
-  const maxPower = scaleSteps.find(s => peakW <= s) ?? 12000;
+  const peakKwp = pvPeakKwp ?? 12;
+  const scaleSteps = [3000, 6000, 9000, 12000, 15000, Math.ceil(peakKwp) * 1000];
+  const sortedSteps = [...new Set(scaleSteps)].sort((a, b) => a - b);
+  const maxPower = sortedSteps.find(s => peakW <= s) ?? sortedSteps[sortedSteps.length - 1];
 
   // Grid lines for power axis (left)
   const maxKw = maxPower / 1000;
-  const step = maxKw <= 3 ? 1 : 2;
+  const step = maxKw <= 3 ? 1 : maxKw <= 9 ? 2 : 3;
   const gridLines: { kw: number; bottomPct: number }[] = [];
   for (let kw = step; kw < maxKw; kw += step) {
     gridLines.push({ kw, bottomPct: (kw / maxKw) * 100 });
@@ -1678,7 +1681,7 @@ export default function Dashboard() {
       {/* Charge Plan Chart */}
       {status?.chargePlan && status.chargePlan.slots.length > 0 && (
         <div className="rounded-xl border border-[var(--border)] bg-[var(--bg-card)] p-5 mt-4">
-          <ChargePlanChart plan={status.chargePlan} hoveredSlot={hoveredSlot} setHoveredSlot={setHoveredSlot} actualFeedIn={actualFeedIn} actualBattery={actualBattery} actualConsumption={actualConsumption} actualSoc={actualSoc} prices={prices} />
+          <ChargePlanChart plan={status.chargePlan} hoveredSlot={hoveredSlot} setHoveredSlot={setHoveredSlot} actualFeedIn={actualFeedIn} actualBattery={actualBattery} actualConsumption={actualConsumption} actualSoc={actualSoc} prices={prices} pvPeakKwp={status.pvPeakKwp} />
         </div>
       )}
 
