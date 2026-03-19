@@ -42,6 +42,7 @@ async function main() {
     forecastCorrectionOverride: null,
     consumptionDayW: 500,
     consumptionNightW: 350,
+    multiplusRatedPowerW: 4000,
   });
 
   await Promise.all([appState.vrm.refreshForecast(), appState.vrm.refreshActualYield()]);

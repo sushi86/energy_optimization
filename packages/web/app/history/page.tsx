@@ -69,7 +69,7 @@ export default function HistoryPage() {
   const totalYield = summaries.reduce((s, d) => s + d.totalYieldKwh, 0);
 
   return (
-    <main className="min-h-screen bg-[var(--bg-main)] text-[var(--text-primary)] p-4 max-w-2xl mx-auto">
+    <main className="min-h-screen bg-[var(--bg-main)] text-[var(--text-primary)] px-4 pb-4 max-w-2xl mx-auto" style={{ paddingTop: 'max(1rem, env(safe-area-inset-top))' }}>
       {/* Header */}
       <div className="flex items-center justify-between mb-6">
         <Link href="/" className="text-sm text-[var(--text-secondary)] hover:text-[var(--text-primary)]">
@@ -106,11 +106,15 @@ export default function HistoryPage() {
         </div>
         <div className="bg-[var(--bg-card)] border border-[var(--border)] rounded-lg p-3">
           <div className="text-xs text-[var(--text-secondary)]">Vergütung</div>
-          <div className="text-lg font-semibold">{((totalFixed + totalMarket) / 100).toFixed(2)} €</div>
+          <div className="text-lg font-semibold">
+            <span className="text-amber-400">{(totalFixed / 100).toFixed(2)}€</span>
+            <span className="text-[var(--text-secondary)] mx-1">·</span>
+            <span className="text-emerald-400">{(totalMarket / 100).toFixed(2)}€</span>
+          </div>
           <div className="text-xs text-[var(--text-secondary)]">
-            <span className="text-amber-400">EEG {(totalFixed / 100).toFixed(2)}€</span>
+            <span className="text-amber-400">EEG</span>
             {' · '}
-            <span className="text-emerald-400">Börse {(totalMarket / 100).toFixed(2)}€</span>
+            <span className="text-emerald-400">Börse</span>
           </div>
         </div>
       </div>
@@ -155,10 +159,10 @@ export default function HistoryPage() {
                     <div className="flex-1 bg-amber-400 rounded-t-sm" style={{ height: `${fixedPct}%`, minHeight: fixedPct > 0 ? '1px' : 0 }} />
                     <div className="flex-1 bg-emerald-400 rounded-t-sm" style={{ height: `${marketPct}%`, minHeight: marketPct > 0 ? '1px' : 0 }} />
                   </div>
-                  {/* Day label */}
-                  {(i + 1) % 5 === 1 && (
-                    <span className="text-[8px] text-[var(--text-secondary)] mt-0.5">{i + 1}</span>
-                  )}
+                  {/* Day label – always reserve space for consistent baseline */}
+                  <span className="text-[8px] text-[var(--text-secondary)] mt-0.5">
+                    {(i + 1) % 5 === 1 ? i + 1 : '\u00A0'}
+                  </span>
                 </div>
               );
             })}

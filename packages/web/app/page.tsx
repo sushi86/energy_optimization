@@ -49,8 +49,6 @@ function formatEnergy(wh: number): string {
   return wh.toLocaleString('de-DE', { maximumFractionDigits: 0 }) + ' Wh';
 }
 
-const MULTIPLUS_RATED_POWER_W = 5000;
-
 const modeColors: Record<string, string> = {
   auto: 'bg-[#10EFD8]/20 text-[#10EFD8] border-[#10EFD8]/30',
   manual: 'bg-yellow-500/20 text-yellow-400 border-yellow-500/30',
@@ -1280,6 +1278,7 @@ export default function Dashboard() {
   const heatPumpPowerW = status?.heatPumpPowerW ?? null;
   const wallboxPowerW = status?.wallboxPowerW ?? null;
   const batteryCapacityKwh = status?.batteryCapacityKwh ?? 16;
+  const multiplusRatedPowerW = status?.multiplusRatedPowerW ?? 4000;
 
   const actualFeedIn = useMemo(() => {
     const map = new Map<string, { feedInW: number; feedInKwh: number }>();
@@ -1425,7 +1424,7 @@ export default function Dashboard() {
           <div className="flex flex-col gap-2">
             {(['L1', 'L2', 'L3'] as const).map((phase) => {
               const watts = inverterPhases[phase];
-              const percent = Math.round(Math.abs(watts) / MULTIPLUS_RATED_POWER_W * 100);
+              const percent = watts > 0 ? Math.round(watts / multiplusRatedPowerW * 100) : 0;
               const isOverload = percent > 100;
               const color = isOverload ? '#f87171' : 'var(--accent)';
               return (

@@ -31,6 +31,7 @@ export interface AppStateOptions {
   forecastCorrectionOverride: number | null;
   consumptionDayW: number;
   consumptionNightW: number;
+  multiplusRatedPowerW: number;
   /** Optional override for the data directory (used by tests for isolation) */
   dataDir?: string;
 }
@@ -306,6 +307,7 @@ export class AppState {
       forecastCorrectionOverride: this.config.forecastCorrectionOverride,
       consumptionDayW: this.config.consumptionDayW,
       consumptionNightW: this.config.consumptionNightW,
+      multiplusRatedPowerW: this.config.multiplusRatedPowerW,
     };
     try {
       const dir = dirname(this.configOverridesPath);

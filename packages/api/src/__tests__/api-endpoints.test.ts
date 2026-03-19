@@ -55,6 +55,7 @@ describe('API Endpoints', () => {
       forecastCorrectionOverride: null,
       consumptionDayW: 500,
       consumptionNightW: 350,
+      multiplusRatedPowerW: 4000,
       dataDir: tmpDir,
     });
     app = buildServer({ testing: true, appState, pvSettingsPath });

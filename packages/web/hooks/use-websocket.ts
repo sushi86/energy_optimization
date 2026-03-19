@@ -71,6 +71,7 @@ export interface SystemStatus {
   batteryCapacityKwh?: number;
   priceOptimizationEnabled?: boolean;
   forecastCorrectionOverride?: number | null;
+  multiplusRatedPowerW?: number;
   regulation?: { lastTime: string; intervalMs: number };
   chargePlan?: ChargePlan | null;
   priceError?: string | null;

@@ -25,11 +25,12 @@ export class NotificationService {
   }
 
   private handleProductionEnded(event: ProductionEndedEvent): void {
-    const totalRevenueEur = ((event.revenueFixedCent + event.revenueMarketCent) / 100).toFixed(2);
+    const eegEur = (event.revenueFixedCent / 100).toFixed(2);
+    const boerseEur = (event.revenueMarketCent / 100).toFixed(2);
 
     void this.pushService.sendNotification({
       title: 'Tages-Zusammenfassung',
-      body: `☀️ ${formatKwh(event.totalYieldKwh)} kWh · ➡️ ${formatKwh(event.feedInKwh)} kWh · 💵 ${totalRevenueEur}€`,
+      body: `☀️ ${formatKwh(event.totalYieldKwh)} kWh · ➡️ ${formatKwh(event.feedInKwh)} kWh · EEG ${eegEur}€ · Börse ${boerseEur}€`,
       url: '/',
       tag: 'evening-summary',
     });

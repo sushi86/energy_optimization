@@ -184,6 +184,7 @@ export function buildServer(options: ServerOptions = {}): FastifyInstance {
         priceOptimizationEnabled: config.priceOptimization,
         allowFeedInNegativePrice: config.allowFeedInNegativePrice,
         forecastCorrectionOverride: config.forecastCorrectionOverride,
+        multiplusRatedPowerW: config.multiplusRatedPowerW,
         regulation: {
           lastTime: state.getRegulationInfo().lastRegulationTime.toISOString(),
           intervalMs: state.getRegulationInfo().intervalMs,
