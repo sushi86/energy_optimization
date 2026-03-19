@@ -10,4 +10,6 @@ config-overrides.json
 .DS_Store
 .claude
 .stoneforge/
+.superpowers/
+docs/superpowers/
 AGENTS.md
