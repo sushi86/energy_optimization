@@ -1275,7 +1275,7 @@ export default function Dashboard() {
   const gridPower = status?.grid?.power ?? 0;
   const batteryPower = status?.battery?.power ?? 0;
   const batterySoc = status?.battery?.soc ?? 0;
-  const inverterPhases = status?.inverter?.phases ?? { L1: 0, L2: 0, L3: 0, feedIn: { L1: 0, L2: 0, L3: 0 }, selfConsumption: { L1: 0, L2: 0, L3: 0 } };
+  const inverterPhases = status?.inverter?.phases ?? { L1: 0, L2: 0, L3: 0, feedIn: { L1: 0, L2: 0, L3: 0 }, selfConsumption: { L1: 0, L2: 0, L3: 0 }, grid: { L1: 0, L2: 0, L3: 0 }, consumption: { L1: 0, L2: 0, L3: 0 } };
   const controller = status?.controller;
   const mpptTemperatureC = status?.mpptTemperatureC ?? null;
   const heatPumpPowerW = status?.heatPumpPowerW ?? null;
