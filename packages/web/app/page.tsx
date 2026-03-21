@@ -1438,42 +1438,41 @@ export default function Dashboard() {
               const consW = inverterPhases.consumption?.[phase] ?? 0;
               const isHovered = multiplusHover === phase;
               return (
-                <div key={phase} className="relative">
-                  <div
-                    className="cursor-default"
-                    onClick={() => setMultiplusHover(isHovered ? null : phase)}
-                    onPointerEnter={(e) => { if (e.pointerType !== 'touch') setMultiplusHover(phase); }}
-                    onPointerLeave={(e) => { if (e.pointerType !== 'touch') setMultiplusHover(null); }}
-                  >
-                    <div className="flex justify-between mb-1">
-                      <span className="text-xs text-[var(--text-secondary)]">{phase}</span>
-                      <span className="text-xs">
-                        <span className="text-[var(--text-primary)]">{formatPower(watts)}</span>
-                        {' · '}
-                        <span style={{ color: isOverload ? '#f87171' : 'var(--accent)' }}>{percent}%</span>
-                      </span>
-                    </div>
-                    <div className="h-1 rounded-full bg-[var(--border)] overflow-hidden flex">
-                      <div
-                        className="h-full transition-all duration-500"
-                        style={{
-                          width: `${selfPct}%`,
-                          backgroundColor: isOverload ? '#f87171' : 'var(--accent)',
-                        }}
-                      />
-                      <div
-                        className="h-full transition-all duration-500"
-                        style={{
-                          width: `${feedPct}%`,
-                          backgroundColor: '#facc15',
-                        }}
-                      />
-                    </div>
+                <div
+                  key={phase}
+                  className="relative"
+                  onPointerEnter={(e) => { if (e.pointerType !== 'touch') setMultiplusHover(phase); }}
+                  onPointerLeave={(e) => { if (e.pointerType !== 'touch') setMultiplusHover(null); }}
+                  onClick={() => setMultiplusHover(isHovered ? null : phase)}
+                >
+                  <div className="flex justify-between mb-1">
+                    <span className="text-xs text-[var(--text-secondary)]">{phase}</span>
+                    <span className="text-xs">
+                      <span className="text-[var(--text-primary)]">{formatPower(watts)}</span>
+                      {' · '}
+                      <span style={{ color: isOverload ? '#f87171' : 'var(--accent)' }}>{percent}%</span>
+                    </span>
+                  </div>
+                  <div className="h-1 rounded-full bg-[var(--border)] overflow-hidden flex">
+                    <div
+                      className="h-full transition-all duration-500"
+                      style={{
+                        width: `${selfPct}%`,
+                        backgroundColor: isOverload ? '#f87171' : 'var(--accent)',
+                      }}
+                    />
+                    <div
+                      className="h-full transition-all duration-500"
+                      style={{
+                        width: `${feedPct}%`,
+                        backgroundColor: '#facc15',
+                      }}
+                    />
                   </div>
                   {isHovered && (
                     <>
-                    <div className="fixed inset-0 z-[9]" onClick={() => setMultiplusHover(null)} />
-                    <div className="absolute left-0 right-0 top-full mt-1 z-10 rounded-lg border border-[var(--border)] bg-[var(--bg-card)] p-2.5 shadow-lg text-xs space-y-1">
+                    <div className="fixed inset-0 z-[9]" onClick={(e) => { e.stopPropagation(); setMultiplusHover(null); }} />
+                    <div className="absolute left-0 right-0 mt-1 z-10 rounded-lg border border-[var(--border)] bg-[var(--bg-card)] p-2.5 shadow-lg text-xs space-y-1 pointer-events-none">
                       <div className="flex justify-between gap-4">
                         <span className="text-[var(--text-secondary)]">Verbrauch</span>
                         <span className="text-[var(--text-primary)]">{formatPower(consW)}</span>
