@@ -1123,6 +1123,7 @@ export default function Dashboard() {
   const [modeOverride, setModeOverride] = useState<string | null>(null);
   const [hoveredSlot, setHoveredSlot] = useState<number | null>(null);
   const [csvCopied, setCsvCopied] = useState(false);
+  const [multiplusHover, setMultiplusHover] = useState<'L1' | 'L2' | 'L3' | null>(null);
 
   // Sync mode from server status
   const serverMode = status?.controller?.mode ?? 'auto';
@@ -1435,34 +1436,56 @@ export default function Dashboard() {
               const feedPct = watts > 0 ? Math.min(Math.max(0, 100 - selfPct), feedW / multiplusRatedPowerW * 100) : 0;
               const gridW = inverterPhases.grid?.[phase] ?? 0;
               const consW = inverterPhases.consumption?.[phase] ?? 0;
-              const gridLabel = gridW <= 0 ? `Einspeisung: ${formatPower(Math.abs(gridW))}` : `Netzbezug: ${formatPower(gridW)}`;
-              const tooltip = `${gridLabel}\nVerbrauch: ${formatPower(consW)}\n= Multiplus: ${formatPower(watts)}`;
+              const isHovered = multiplusHover === phase;
               return (
-                <div key={phase} title={tooltip} className="cursor-default">
-                  <div className="flex justify-between mb-1">
-                    <span className="text-xs text-[var(--text-secondary)]">{phase}</span>
-                    <span className="text-xs">
-                      <span className="text-[var(--text-primary)]">{formatPower(watts)}</span>
-                      {' · '}
-                      <span style={{ color: isOverload ? '#f87171' : 'var(--accent)' }}>{percent}%</span>
-                    </span>
+                <div key={phase} className="relative">
+                  <div
+                    className="cursor-default"
+                    onPointerEnter={() => setMultiplusHover(phase)}
+                    onPointerLeave={() => setMultiplusHover(null)}
+                  >
+                    <div className="flex justify-between mb-1">
+                      <span className="text-xs text-[var(--text-secondary)]">{phase}</span>
+                      <span className="text-xs">
+                        <span className="text-[var(--text-primary)]">{formatPower(watts)}</span>
+                        {' · '}
+                        <span style={{ color: isOverload ? '#f87171' : 'var(--accent)' }}>{percent}%</span>
+                      </span>
+                    </div>
+                    <div className="h-1 rounded-full bg-[var(--border)] overflow-hidden flex">
+                      <div
+                        className="h-full transition-all duration-500"
+                        style={{
+                          width: `${selfPct}%`,
+                          backgroundColor: isOverload ? '#f87171' : 'var(--accent)',
+                        }}
+                      />
+                      <div
+                        className="h-full transition-all duration-500"
+                        style={{
+                          width: `${feedPct}%`,
+                          backgroundColor: '#facc15',
+                        }}
+                      />
+                    </div>
                   </div>
-                  <div className="h-1 rounded-full bg-[var(--border)] overflow-hidden flex">
-                    <div
-                      className="h-full transition-all duration-500"
-                      style={{
-                        width: `${selfPct}%`,
-                        backgroundColor: isOverload ? '#f87171' : 'var(--accent)',
-                      }}
-                    />
-                    <div
-                      className="h-full transition-all duration-500"
-                      style={{
-                        width: `${feedPct}%`,
-                        backgroundColor: '#facc15',
-                      }}
-                    />
-                  </div>
+                  {isHovered && (
+                    <div className="absolute left-0 right-0 top-full mt-1 z-10 rounded-lg border border-[var(--border)] bg-[var(--bg-card)] p-2.5 shadow-lg text-xs space-y-1">
+                      <div className="flex justify-between gap-4">
+                        <span className="text-[var(--text-secondary)]">Verbrauch</span>
+                        <span className="text-[var(--text-primary)]">{formatPower(consW)}</span>
+                      </div>
+                      <div className="flex justify-between gap-4">
+                        <span className="text-[var(--text-secondary)]">{gridW <= 0 ? 'Einspeisung' : 'Netzbezug'}</span>
+                        <span style={{ color: gridW <= 0 ? '#facc15' : '#f87171' }}>{gridW <= 0 ? `−${formatPower(Math.abs(gridW))}` : `+${formatPower(gridW)}`}</span>
+                      </div>
+                      <div className="border-t border-[var(--border)] my-1" />
+                      <div className="flex justify-between gap-4 font-medium">
+                        <span className="text-[var(--text-secondary)]">Multiplus</span>
+                        <span className="text-[var(--accent)]">{formatPower(watts)}</span>
+                      </div>
+                    </div>
+                  )}
                 </div>
               );
             })}
