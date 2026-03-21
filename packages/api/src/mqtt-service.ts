@@ -191,8 +191,14 @@ export class MqttService extends EventEmitter {
     };
   }
 
-  getInverterPhases(): { L1: number; L2: number; L3: number; feedIn: { L1: number; L2: number; L3: number }; selfConsumption: { L1: number; L2: number; L3: number } } {
-    const result = {} as { L1: number; L2: number; L3: number; feedIn: { L1: number; L2: number; L3: number }; selfConsumption: { L1: number; L2: number; L3: number } };
+  getInverterPhases(): {
+    L1: number; L2: number; L3: number;
+    feedIn: { L1: number; L2: number; L3: number };
+    selfConsumption: { L1: number; L2: number; L3: number };
+    grid: { L1: number; L2: number; L3: number };
+    consumption: { L1: number; L2: number; L3: number };
+  } {
+    const result = {} as ReturnType<MqttService['getInverterPhases']>;
     const feedIn = { L1: 0, L2: 0, L3: 0 };
     const selfConsumption = { L1: 0, L2: 0, L3: 0 };
     for (const phase of ['L1', 'L2', 'L3'] as const) {
@@ -207,6 +213,8 @@ export class MqttService extends EventEmitter {
     }
     result.feedIn = feedIn;
     result.selfConsumption = selfConsumption;
+    result.grid = { ...this.gridPhases } as { L1: number; L2: number; L3: number };
+    result.consumption = { ...this.consumptionPhases } as { L1: number; L2: number; L3: number };
     return result;
   }
 

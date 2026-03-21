@@ -129,6 +129,8 @@ describe('MqttService', () => {
     expect(phases.L3).toBe(2500);
     expect(phases.selfConsumption).toEqual({ L1: 2500, L2: 2000, L3: 2500 });
     expect(phases.feedIn).toEqual({ L1: 0, L2: 1000, L3: 0 });
+    expect(phases.grid).toEqual({ L1: 500, L2: -1000, L3: 1500 });
+    expect(phases.consumption).toEqual({ L1: 3000, L2: 2000, L3: 4000 });
   });
 
   it('writes grid setpoint via MQTT', async () => {

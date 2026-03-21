@@ -1433,8 +1433,12 @@ export default function Dashboard() {
               const feedW = inverterPhases.feedIn?.[phase] ?? 0;
               const selfPct = watts > 0 ? Math.min(100, selfW / multiplusRatedPowerW * 100) : 0;
               const feedPct = watts > 0 ? Math.min(Math.max(0, 100 - selfPct), feedW / multiplusRatedPowerW * 100) : 0;
+              const gridW = inverterPhases.grid?.[phase] ?? 0;
+              const consW = inverterPhases.consumption?.[phase] ?? 0;
+              const gridLabel = gridW <= 0 ? `Einspeisung: ${formatPower(Math.abs(gridW))}` : `Netzbezug: ${formatPower(gridW)}`;
+              const tooltip = `${gridLabel}\nVerbrauch: ${formatPower(consW)}\n= Multiplus: ${formatPower(watts)}`;
               return (
-                <div key={phase}>
+                <div key={phase} title={tooltip} className="cursor-default">
                   <div className="flex justify-between mb-1">
                     <span className="text-xs text-[var(--text-secondary)]">{phase}</span>
                     <span className="text-xs">
