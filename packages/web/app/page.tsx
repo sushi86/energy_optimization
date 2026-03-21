@@ -1441,8 +1441,9 @@ export default function Dashboard() {
                 <div key={phase} className="relative">
                   <div
                     className="cursor-default"
-                    onPointerEnter={() => setMultiplusHover(phase)}
-                    onPointerLeave={() => setMultiplusHover(null)}
+                    onClick={() => setMultiplusHover(isHovered ? null : phase)}
+                    onPointerEnter={(e) => { if (e.pointerType !== 'touch') setMultiplusHover(phase); }}
+                    onPointerLeave={(e) => { if (e.pointerType !== 'touch') setMultiplusHover(null); }}
                   >
                     <div className="flex justify-between mb-1">
                       <span className="text-xs text-[var(--text-secondary)]">{phase}</span>
@@ -1470,6 +1471,8 @@ export default function Dashboard() {
                     </div>
                   </div>
                   {isHovered && (
+                    <>
+                    <div className="fixed inset-0 z-[9]" onClick={() => setMultiplusHover(null)} />
                     <div className="absolute left-0 right-0 top-full mt-1 z-10 rounded-lg border border-[var(--border)] bg-[var(--bg-card)] p-2.5 shadow-lg text-xs space-y-1">
                       <div className="flex justify-between gap-4">
                         <span className="text-[var(--text-secondary)]">Verbrauch</span>
@@ -1485,6 +1488,7 @@ export default function Dashboard() {
                         <span className="text-[var(--accent)]">{formatPower(watts)}</span>
                       </div>
                     </div>
+                    </>
                   )}
                 </div>
               );
