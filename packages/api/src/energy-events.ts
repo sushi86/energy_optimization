@@ -19,9 +19,14 @@ export interface ProductionEndedEvent {
   forecastCorrectionFactor: number;
 }
 
+export interface TemperatureHighEvent {
+  temperatureC: number;
+}
+
 interface EnergyEventMap {
   'pv:morning-briefing': [MorningBriefingEvent];
   'pv:production-ended': [ProductionEndedEvent];
+  'mppt:temperature-high': [TemperatureHighEvent];
 }
 
 class EnergyEventEmitter extends EventEmitter {

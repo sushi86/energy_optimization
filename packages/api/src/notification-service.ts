@@ -1,4 +1,4 @@
-import { energyEvents, type MorningBriefingEvent, type ProductionEndedEvent } from './energy-events.js';
+import { energyEvents, type MorningBriefingEvent, type ProductionEndedEvent, type TemperatureHighEvent } from './energy-events.js';
 import type { PushService } from './push-service.js';
 
 function formatKwh(kwh: number): string {
@@ -9,6 +9,7 @@ export class NotificationService {
   constructor(private pushService: PushService) {
     energyEvents.on('pv:morning-briefing', (event) => this.handleMorningBriefing(event));
     energyEvents.on('pv:production-ended', (event) => this.handleProductionEnded(event));
+    energyEvents.on('mppt:temperature-high', (event) => this.handleTemperatureHigh(event));
     console.log('[notifications] Service started');
   }
 
@@ -33,6 +34,15 @@ export class NotificationService {
       body: `☀️ ${formatKwh(event.totalYieldKwh)} kWh · ➡️ ${formatKwh(event.feedInKwh)} kWh · EEG ${eegEur}€ · Börse ${boerseEur}€`,
       url: '/',
       tag: 'evening-summary',
+    });
+  }
+
+  private handleTemperatureHigh(event: TemperatureHighEvent): void {
+    void this.pushService.sendNotification({
+      title: 'Temperaturwarnung',
+      body: `🌡️ MPPT Laderegler bei ${event.temperatureC.toFixed(1)} °C`,
+      url: '/',
+      tag: 'temperature-high',
     });
   }
 }

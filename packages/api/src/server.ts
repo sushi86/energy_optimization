@@ -13,6 +13,7 @@ import type { GridHistoryService } from './grid-history-service.js';
 import type { NibePoller } from './nibe-poller.js';
 import type { WallboxPoller } from './wallbox-poller.js';
 import type { PushService } from './push-service.js';
+import { energyEvents } from './energy-events.js';
 import { getVapidPublicKey } from './vapid.js';
 import type { DailySummaryService } from './daily-summary-service.js';
 
@@ -47,6 +48,9 @@ let priceCache: PriceCache | null = null;
 
 // MPPT temperature cache (polled every 60s)
 let mpptTemperatureC: number | null = null;
+let temperatureHighEmitted = false;
+
+const TEMPERATURE_HIGH_THRESHOLD = 35;
 
 async function fetchMpptTemperature(): Promise<void> {
   try {
@@ -54,6 +58,13 @@ async function fetchMpptTemperature(): Promise<void> {
     if (!res.ok) throw new Error(`HTTP ${res.status}`);
     const data = await res.json();
     mpptTemperatureC = data.tC ?? null;
+
+    if (mpptTemperatureC !== null && mpptTemperatureC > TEMPERATURE_HIGH_THRESHOLD && !temperatureHighEmitted) {
+      temperatureHighEmitted = true;
+      energyEvents.emit('mppt:temperature-high', { temperatureC: mpptTemperatureC });
+    } else if (mpptTemperatureC !== null && mpptTemperatureC <= TEMPERATURE_HIGH_THRESHOLD) {
+      temperatureHighEmitted = false;
+    }
   } catch (e) {
     console.error('[mppt-temp] fetch error:', (e as Error).message);
   }
