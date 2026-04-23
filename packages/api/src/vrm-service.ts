@@ -114,40 +114,35 @@ export class VrmService {
   async refreshForecast(): Promise<void> {
     try {
       const intervalHours = 0.25; // 15-min slots
-      const hours = await this.fetchVrmStats('forecast', 'solar_yield_forecast');
+      const raw = await this.fetchVrmStats('forecast', 'solar_yield_forecast');
 
-      // VRM forecast is hourly: only :00 entries have values, :15/:30/:45 are 0.
-      // Interpolate between hourly values for smooth 15-min transitions.
-      // First, collect the hourly anchor values.
-      const hourlyAnchors: Array<{ index: number; powerW: number }> = [];
-      for (let i = 0; i < hours.length; i++) {
-        if (hours[i].timestamp.getMinutes() === 0) {
-          hourlyAnchors.push({ index: i, powerW: hours[i].powerW });
-        }
-      }
+      // VRM forecast carries the prediction only on :00 entries. Build a
+      // complete 15-min grid by interpolating between :00 anchors. We rebuild
+      // the :15/:30/:45 slots from anchors regardless of whether VRM included
+      // them — robust against responses that omit empty intermediate slots
+      // (observed for future hours).
+      const anchors = raw.filter(h => h.timestamp.getMinutes() === 0);
 
-      // Interpolate between anchors
-      for (let a = 0; a < hourlyAnchors.length; a++) {
-        const curr = hourlyAnchors[a];
-        const next = a + 1 < hourlyAnchors.length ? hourlyAnchors[a + 1] : null;
+      const slotMap = new Map<number, ForecastHour>();
+      for (const h of raw) slotMap.set(h.timestamp.getTime(), h);
+
+      for (let a = 0; a < anchors.length; a++) {
+        const curr = anchors[a];
+        const next = a + 1 < anchors.length ? anchors[a + 1] : null;
+        const adjacent = next != null
+          && next.timestamp.getTime() - curr.timestamp.getTime() === 60 * 60 * 1000;
 
         for (let q = 1; q <= 3; q++) {
-          const slotIdx = curr.index + q;
-          if (slotIdx >= hours.length) break;
-          if (hours[slotIdx].timestamp.getMinutes() !== q * 15) continue;
-
-          if (next) {
-            // Linear interpolation: q/4 of the way from curr to next
-            const t = q / 4;
-            hours[slotIdx].powerW = Math.max(0, Math.round(
-              curr.powerW + (next.powerW - curr.powerW) * t,
-            ));
-          } else {
-            // Last hour: no next value, keep flat
-            hours[slotIdx].powerW = curr.powerW;
-          }
+          const ts = curr.timestamp.getTime() + q * 15 * 60 * 1000;
+          const powerW = adjacent
+            ? Math.max(0, Math.round(curr.powerW + (next!.powerW - curr.powerW) * (q / 4)))
+            : curr.powerW;
+          slotMap.set(ts, { timestamp: new Date(ts), powerW });
         }
       }
+
+      const hours = Array.from(slotMap.values())
+        .sort((a, b) => a.timestamp.getTime() - b.timestamp.getTime());
 
       let totalWh = 0;
       for (const h of hours) totalWh += h.powerW * intervalHours;

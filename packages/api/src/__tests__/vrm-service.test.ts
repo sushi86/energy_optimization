@@ -83,6 +83,37 @@ describe('VrmService', () => {
     expect(service.isWinterMode(16, 1.2)).toBe(true);
   });
 
+  it('fills missing 15-min slots between hourly anchors', async () => {
+    // VRM occasionally returns only :00 entries for future hours.
+    // Pick two :00-aligned anchors 1h apart (Berlin midnight is :00 in UTC too — minus the offset).
+    const anchorA = new Date('2026-04-23T10:00:00Z').getTime() / 1000;
+    const anchorB = anchorA + 3600;
+
+    mockFetch.mockResolvedValueOnce({
+      ok: true,
+      json: async () =>
+        createForecastResponse([
+          { timestamp: anchorA, wh: 4000 },
+          { timestamp: anchorB, wh: 8000 },
+        ]),
+    });
+
+    await service.refreshForecast();
+    const { hours } = service.getForecast();
+
+    // Expect anchor + 3 interpolated + next anchor + 3 trailing flat = 8 slots
+    expect(hours).toHaveLength(8);
+    expect(hours[0].powerW).toBe(4000);
+    expect(hours[1].powerW).toBe(5000); // 25% between 4000 and 8000
+    expect(hours[2].powerW).toBe(6000); // 50%
+    expect(hours[3].powerW).toBe(7000); // 75%
+    expect(hours[4].powerW).toBe(8000);
+    // Last anchor with no successor → flat
+    expect(hours[5].powerW).toBe(8000);
+    expect(hours[6].powerW).toBe(8000);
+    expect(hours[7].powerW).toBe(8000);
+  });
+
   it('is not winter mode when forecast exceeds threshold', async () => {
     const now = Math.floor(Date.now() / 1000);
     // Generate enough 15-min slots to exceed 19.2 kWh threshold
