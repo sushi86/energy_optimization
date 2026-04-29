@@ -52,6 +52,8 @@ describe('API Endpoints', () => {
       allowFeedInNegativePrice: false,
       feedInRateCentPerKwh: 7,
       preferredMaxChargeW: 5000,
+      activeMorningDischarge: false,
+      activeMorningDischargeMinSocPercent: 5,
       forecastCorrectionOverride: null,
       consumptionDayW: 500,
       consumptionNightW: 350,

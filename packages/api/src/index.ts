@@ -39,6 +39,8 @@ async function main() {
     allowFeedInNegativePrice: config.ALLOW_FEED_IN_NEGATIVE_PRICE,
     feedInRateCentPerKwh: config.FEED_IN_RATE_CENT_PER_KWH,
     preferredMaxChargeW: config.PREFERRED_MAX_CHARGE_W,
+    activeMorningDischarge: config.ACTIVE_MORNING_DISCHARGE,
+    activeMorningDischargeMinSocPercent: config.ACTIVE_MORNING_DISCHARGE_MIN_SOC_PERCENT,
     forecastCorrectionOverride: null,
     consumptionDayW: 500,
     consumptionNightW: 350,

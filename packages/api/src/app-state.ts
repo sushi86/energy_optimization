@@ -28,6 +28,8 @@ export interface AppStateOptions {
   allowFeedInNegativePrice: boolean;
   feedInRateCentPerKwh: number;
   preferredMaxChargeW: number;
+  activeMorningDischarge: boolean;
+  activeMorningDischargeMinSocPercent: number;
   forecastCorrectionOverride: number | null;
   consumptionDayW: number;
   consumptionNightW: number;
@@ -74,6 +76,8 @@ export class AppState {
       deadbandW: options.deadbandW,
       priceOptimization: options.priceOptimization ?? false,
       allowFeedInNegativePrice: options.allowFeedInNegativePrice ?? false,
+      activeMorningDischarge: options.activeMorningDischarge ?? false,
+      activeMorningDischargeMinSocPercent: options.activeMorningDischargeMinSocPercent ?? 5,
     });
     const dataDir = options.dataDir ?? resolve(dirname(fileURLToPath(import.meta.url)), '../../../data');
     this.pvSettingsPath = resolve(dataDir, 'pv-settings.json');
@@ -195,6 +199,8 @@ export class AppState {
         priceOptimization: this.config.priceOptimization,
         allowFeedInNegativePrice: this.config.allowFeedInNegativePrice,
         preferredMaxChargeW: this.config.preferredMaxChargeW,
+        activeMorningDischarge: this.config.activeMorningDischarge,
+        activeMorningDischargeMinSocPercent: this.config.activeMorningDischargeMinSocPercent,
         actualPvPowerW: systemState.pvPower,
         forecastCorrectionOverride: averagedCorrectionOverride,
       });
@@ -265,6 +271,8 @@ export class AppState {
       deadbandW: this.config.deadbandW,
       priceOptimization: this.config.priceOptimization ?? false,
       allowFeedInNegativePrice: this.config.allowFeedInNegativePrice ?? false,
+      activeMorningDischarge: this.config.activeMorningDischarge ?? false,
+      activeMorningDischargeMinSocPercent: this.config.activeMorningDischargeMinSocPercent ?? 5,
     });
     this.saveConfigOverrides();
     return { ...this.config };
@@ -304,6 +312,8 @@ export class AppState {
       allowFeedInNegativePrice: this.config.allowFeedInNegativePrice,
       feedInRateCentPerKwh: this.config.feedInRateCentPerKwh,
       preferredMaxChargeW: this.config.preferredMaxChargeW,
+      activeMorningDischarge: this.config.activeMorningDischarge,
+      activeMorningDischargeMinSocPercent: this.config.activeMorningDischargeMinSocPercent,
       forecastCorrectionOverride: this.config.forecastCorrectionOverride,
       consumptionDayW: this.config.consumptionDayW,
       consumptionNightW: this.config.consumptionNightW,

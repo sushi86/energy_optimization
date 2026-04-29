@@ -379,6 +379,99 @@ describe('computeChargePlan', () => {
     expect(plan.totalRevenueFixedCent).toBeCloseTo(plan.totalFeedInKwh * 7, 1);
   });
 
+  it('non-price-mode: late-charging — concentrates charging in late slots, feeds in early', () => {
+    // 8 hours of production, ample surplus, no price optimization
+    const forecast = makeForecast([6000, 6000, 6000, 6000, 6000, 6000, 6000, 6000], 8);
+    const prices = makePrices();
+    const config = makeConfig({
+      currentSoc: 50,
+      batteryCapacityKwh: 16,
+      priceOptimization: false,
+      consumptionDayW: 1000,
+    });
+
+    const plan = computeChargePlan(forecast, prices, config);
+
+    // Surplus per slot = 5kW × 0.25h = 1.25kWh; total = 8h * 5kW = 40kWh; need = 8kWh; ratio = 5x
+    // Earliest slots should have ~zero voluntary charge (only forced if any), late slots should charge
+    const firstQuarter = plan.slots.slice(0, plan.slots.length / 4);
+    const lastQuarter = plan.slots.slice(-plan.slots.length / 4);
+
+    const earlyCharge = firstQuarter.reduce((s, h) => s + h.chargePowerW, 0);
+    const lateCharge = lastQuarter.reduce((s, h) => s + h.chargePowerW, 0);
+    const earlyFeedIn = firstQuarter.reduce((s, h) => s + h.feedInPowerW, 0);
+
+    expect(lateCharge).toBeGreaterThan(earlyCharge);
+    expect(earlyFeedIn).toBeGreaterThan(0);
+  });
+
+  it('active morning discharge: drains battery in earliest slots when surplus is plentiful', () => {
+    // Surplus ratio ≥ 2 needed; 8h × 6kW = 48 kWh prod, day consumption ~ 8 kWh; surplus ~40 kWh
+    // Battery need: 100% - 80% = 20% of 16kWh = 3.2 kWh → ratio ≈ 12 (well above 2)
+    const forecast = makeForecast([6000, 6000, 6000, 6000, 6000, 6000, 6000, 6000], 8);
+    const prices = makePrices();
+    const config = makeConfig({
+      currentSoc: 80,
+      batteryCapacityKwh: 16,
+      priceOptimization: false,
+      activeMorningDischarge: true,
+      activeMorningDischargeMinSocPercent: 5,
+      maxAcPowerW: 12000,
+    });
+
+    const plan = computeChargePlan(forecast, prices, config);
+
+    // Earliest slots should have negative chargePowerW (discharge)
+    const earlySlot = plan.slots[0];
+    expect(earlySlot.chargePowerW).toBeLessThan(0);
+
+    // SOC trajectory: should decrease in early slots, never below 5%
+    const minSoc = Math.min(...plan.slots.map(s => s.estimatedSoc));
+    expect(minSoc).toBeGreaterThanOrEqual(5);
+
+    // Total feed-in should exceed total surplus (because battery is feeding too)
+    const totalFeedIn = plan.slots.reduce((s, h) => s + h.feedInPowerW * 0.25 / 1000, 0);
+    const totalSurplus = plan.slots.reduce((s, h) => s + Math.max(0, h.forecastW - h.consumptionW) * 0.25 / 1000, 0);
+    expect(totalFeedIn).toBeGreaterThan(totalSurplus);
+  });
+
+  it('active morning discharge: not triggered when surplus ratio is below 2', () => {
+    // Tight surplus: forecast barely covers battery need
+    const forecast = makeForecast([3500, 3500, 3500, 3500, 3500], 9);
+    const prices = makePrices();
+    const config = makeConfig({
+      currentSoc: 50,
+      batteryCapacityKwh: 16,
+      priceOptimization: false,
+      activeMorningDischarge: true,
+      activeMorningDischargeMinSocPercent: 5,
+    });
+
+    const plan = computeChargePlan(forecast, prices, config);
+
+    // No slot should be a discharge slot
+    for (const s of plan.slots) {
+      expect(s.chargePowerW).toBeGreaterThanOrEqual(0);
+    }
+  });
+
+  it('active morning discharge: respects activeMorningDischargeMinSocPercent floor', () => {
+    const forecast = makeForecast([6000, 6000, 6000, 6000, 6000, 6000, 6000, 6000], 8);
+    const prices = makePrices();
+    const config = makeConfig({
+      currentSoc: 90,
+      batteryCapacityKwh: 16,
+      priceOptimization: false,
+      activeMorningDischarge: true,
+      activeMorningDischargeMinSocPercent: 30,
+    });
+
+    const plan = computeChargePlan(forecast, prices, config);
+
+    const minSoc = Math.min(...plan.slots.map(s => s.estimatedSoc));
+    expect(minSoc).toBeGreaterThanOrEqual(30);
+  });
+
   it('charges to minSoc before feeding in when SOC is below safety minimum', () => {
     const forecast = makeForecast([5000, 5000, 5000, 5000], 7);
     const prices = makePrices(0, 24, 150); // expensive prices

@@ -13,6 +13,10 @@ export interface ChargePlanConfig {
   priceOptimization: boolean;
   allowFeedInNegativePrice: boolean;
   preferredMaxChargeW: number;
+  /** Active morning discharge: drain battery into grid before clipping starts */
+  activeMorningDischarge?: boolean;
+  /** SOC floor for active morning discharge (default 5%) */
+  activeMorningDischargeMinSocPercent?: number;
   /** Actual current PV power — used to correct optimistic forecasts */
   actualPvPowerW?: number;
   /** Manual override for forecast correction factor (0.1–2.0). null = auto. */
@@ -245,14 +249,79 @@ export function computeChargePlan(
         }
       }
     } else {
-      // NO PRICE OPTIMIZATION: spread charging evenly
+      // NO PRICE OPTIMIZATION: late-charging — fill battery as late as possible
+      // so morning/midday peak is fully fed in. Avoids curtailment when forecast
+      // underestimates production.
+      // Combined safety buffer: target 20% extra kWh + extend one slot earlier.
       const surplusSlots = analysis.filter(s => s.voluntarySurplusW > 0);
       if (surplusSlots.length > 0) {
-        const perSlotKwh = voluntaryNeedKwh / surplusSlots.length;
-        for (const s of surplusSlots) {
-          voluntaryChargeW[s.idx] = Math.min(perSlotKwh / ih * 1000, s.voluntarySurplusW);
+        const safeNeed = voluntaryNeedKwh * 1.2;
+        let remaining = safeNeed;
+        let earliestUsedK = surplusSlots.length; // out-of-range sentinel
+
+        // First pass: latest-first, capped at preferredMaxChargeW
+        for (let k = surplusSlots.length - 1; k >= 0 && remaining > 0; k--) {
+          const s = surplusSlots[k];
+          const cappedW = Math.min(s.voluntarySurplusW, preferredMaxChargeW);
+          const slotKwh = cappedW * ih / 1000;
+          const useKwh = Math.min(slotKwh, remaining);
+          voluntaryChargeW[s.idx] = useKwh / ih * 1000;
+          remaining -= useKwh;
+          earliestUsedK = k;
+        }
+
+        // Second pass: lift cap to voluntarySurplusW if still short
+        if (remaining > 0.05) {
+          for (let k = surplusSlots.length - 1; k >= 0 && remaining > 0; k--) {
+            const s = surplusSlots[k];
+            const headroomW = s.voluntarySurplusW - voluntaryChargeW[s.idx];
+            if (headroomW <= 0) continue;
+            const slotKwh = headroomW * ih / 1000;
+            const useKwh = Math.min(slotKwh, remaining);
+            voluntaryChargeW[s.idx] += useKwh / ih * 1000;
+            remaining -= useKwh;
+            if (k < earliestUsedK) earliestUsedK = k;
+          }
+        }
+
+        // Time buffer: one extra earlier slot at preferredMaxChargeW
+        if (earliestUsedK > 0) {
+          const bufferSlot = surplusSlots[earliestUsedK - 1];
+          voluntaryChargeW[bufferSlot.idx] = Math.min(bufferSlot.voluntarySurplusW, preferredMaxChargeW);
         }
       }
+    }
+  }
+
+  // --- Active morning discharge (optional) ---
+  // When enabled and the day's surplus comfortably exceeds battery need,
+  // actively drain the battery into the grid in the earliest surplus slots
+  // so that more clipping later in the day fits into the battery.
+  // Triggers only at surplusRatio ≥ 2 (forecast surplus ≥ 2× battery need).
+  const activeDischargeEnabled =
+    (config.activeMorningDischarge ?? false) && surplusRatio >= 2 && !tightForecast;
+  const dischargeMinSoc = config.activeMorningDischargeMinSocPercent ?? 5;
+  if (activeDischargeEnabled && currentSoc > dischargeMinSoc) {
+    let socSim = currentSoc;
+    for (let i = 0; i < analysis.length; i++) {
+      if (socSim <= dischargeMinSoc) break;
+      const s = analysis[i];
+      // Only discharge while there is PV surplus and before clipping begins.
+      if (s.surplusW <= 0) continue;
+      if (s.clippingW > 0) break;
+      // Skip negative-price slots when feed-in there is forbidden.
+      const isNegPrice = s.price != null && s.price <= 0 && !config.allowFeedInNegativePrice;
+      if (isNegPrice) continue;
+      // Headroom on AC limit: remaining export capacity after PV surplus.
+      const headroomW = Math.max(0, maxAcPowerW - s.surplusW);
+      if (headroomW <= 0) break;
+      // Cap by SOC floor.
+      const maxKwhFromSoc = ((socSim - dischargeMinSoc) / 100) * batteryCapacityKwh;
+      const maxKwhThisSlot = Math.min(headroomW * ih / 1000, maxKwhFromSoc);
+      if (maxKwhThisSlot <= 0.01) break;
+      const dischargeW = maxKwhThisSlot / ih * 1000;
+      voluntaryChargeW[i] = -dischargeW; // override any prior allocation
+      socSim -= (maxKwhThisSlot / batteryCapacityKwh) * 100;
     }
   }
 
@@ -273,7 +342,17 @@ export function computeChargePlan(
     let chargeW: number;
     let feedInW: number;
 
-    if (s.surplusW < 0) {
+    const isActiveDischargeSlot = activeDischargeEnabled && voluntaryChargeW[i] < 0 && s.surplusW > 0;
+
+    if (isActiveDischargeSlot) {
+      // Active morning discharge: feed PV surplus + battery power to grid.
+      // Cap discharge so SOC doesn't drop below dischargeMinSoc.
+      const maxKwhFromSoc = Math.max(0, ((soc - dischargeMinSoc) / 100) * batteryCapacityKwh);
+      const requestedDischargeKwh = Math.abs(voluntaryChargeW[i]) * ih / 1000;
+      const actualDischargeKwh = Math.min(requestedDischargeKwh, maxKwhFromSoc);
+      chargeW = -(actualDischargeKwh / ih * 1000);
+      feedInW = isNegativePrice ? 0 : Math.max(0, s.surplusW - chargeW);
+    } else if (s.surplusW < 0) {
       // Deficit: consumption exceeds PV — drain battery, but not below minSoc
       if (soc <= config.minSocPercent) {
         // Battery at or below minimum — grid covers deficit, no discharge

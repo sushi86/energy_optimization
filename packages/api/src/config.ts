@@ -17,6 +17,8 @@ const configSchema = z.object({
   ALLOW_FEED_IN_NEGATIVE_PRICE: z.coerce.boolean().default(false),
   FEED_IN_RATE_CENT_PER_KWH: z.coerce.number().default(7),
   PREFERRED_MAX_CHARGE_W: z.coerce.number().default(5000),
+  ACTIVE_MORNING_DISCHARGE: z.coerce.boolean().default(false),
+  ACTIVE_MORNING_DISCHARGE_MIN_SOC_PERCENT: z.coerce.number().default(5),
   INEXOGY_EMAIL: z.string().optional(),
   INEXOGY_PASSWORD: z.string().optional(),
   INEXOGY_METER_ID: z.string().optional(),

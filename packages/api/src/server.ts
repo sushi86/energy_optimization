@@ -171,6 +171,8 @@ export function buildServer(options: ServerOptions = {}): FastifyInstance {
             priceOptimization: config.priceOptimization,
             allowFeedInNegativePrice: config.allowFeedInNegativePrice,
             preferredMaxChargeW: config.preferredMaxChargeW,
+            activeMorningDischarge: config.activeMorningDischarge,
+            activeMorningDischargeMinSocPercent: config.activeMorningDischargeMinSocPercent,
             actualPvPowerW: s.pvPower,
             forecastCorrectionOverride: config.forecastCorrectionOverride,
           });
@@ -301,6 +303,8 @@ export function buildServer(options: ServerOptions = {}): FastifyInstance {
       allowFeedInNegativePrice: c.allowFeedInNegativePrice,
       feedInRateCentPerKwh: c.feedInRateCentPerKwh,
       forecastCorrectionOverride: c.forecastCorrectionOverride,
+      activeMorningDischarge: c.activeMorningDischarge,
+      activeMorningDischargeMinSocPercent: c.activeMorningDischargeMinSocPercent,
     };
   });
 
@@ -321,6 +325,8 @@ export function buildServer(options: ServerOptions = {}): FastifyInstance {
       allowFeedInNegativePrice: updated.allowFeedInNegativePrice,
       feedInRateCentPerKwh: updated.feedInRateCentPerKwh,
       forecastCorrectionOverride: updated.forecastCorrectionOverride,
+      activeMorningDischarge: updated.activeMorningDischarge,
+      activeMorningDischargeMinSocPercent: updated.activeMorningDischargeMinSocPercent,
     };
   });
 
@@ -545,6 +551,8 @@ export function buildServer(options: ServerOptions = {}): FastifyInstance {
         priceOptimization: config.priceOptimization,
         allowFeedInNegativePrice: config.allowFeedInNegativePrice,
         preferredMaxChargeW: config.preferredMaxChargeW,
+        activeMorningDischarge: config.activeMorningDischarge,
+        activeMorningDischargeMinSocPercent: config.activeMorningDischargeMinSocPercent,
         actualPvPowerW: systemState.pvPower,
         forecastCorrectionOverride: config.forecastCorrectionOverride,
       });
@@ -651,6 +659,8 @@ export function buildServer(options: ServerOptions = {}): FastifyInstance {
           priceOptimization: config.priceOptimization,
           allowFeedInNegativePrice: config.allowFeedInNegativePrice,
           preferredMaxChargeW: config.preferredMaxChargeW,
+          activeMorningDischarge: config.activeMorningDischarge,
+          activeMorningDischargeMinSocPercent: config.activeMorningDischargeMinSocPercent,
           actualPvPowerW: systemState.pvPower,
           forecastCorrectionOverride: factor,
         });
@@ -684,6 +694,8 @@ export function buildServer(options: ServerOptions = {}): FastifyInstance {
         priceOptimization: config.priceOptimization,
         allowFeedInNegativePrice: config.allowFeedInNegativePrice,
         preferredMaxChargeW: config.preferredMaxChargeW,
+        activeMorningDischarge: config.activeMorningDischarge,
+        activeMorningDischargeMinSocPercent: config.activeMorningDischargeMinSocPercent,
         actualPvPowerW: systemState.pvPower,
       });
       autoFactor = autoPlan.forecastCorrectionFactor;

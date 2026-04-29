@@ -25,6 +25,8 @@ export interface ControllerDeps {
   deadbandW: number;
   priceOptimization: boolean;
   allowFeedInNegativePrice: boolean;
+  activeMorningDischarge: boolean;
+  activeMorningDischargeMinSocPercent: number;
 }
 
 export interface ControllerDetails {
@@ -130,9 +132,18 @@ export class Controller {
       return { setpointW: 0, mode: 'winter', reason: 'Winter mode: forecast below threshold', details: noDetails };
     }
 
-    // Safety: SOC below minimum
-    if (state.batterySoc < minSocPercent) {
-      return { setpointW: 0, mode: 'auto', reason: `SOC (${state.batterySoc}%) below minimum (${minSocPercent}%)`, details: noDetails };
+    // Active-discharge slots get a lowered SOC floor
+    const plannedSlot = chargePlan ? this.findCurrentPlanSlot(chargePlan) : null;
+    const isActiveDischargeSlot = plannedSlot != null
+      && plannedSlot.chargePowerW < 0
+      && this.config.activeMorningDischarge;
+    const effectiveMinSoc = isActiveDischargeSlot
+      ? this.config.activeMorningDischargeMinSocPercent
+      : minSocPercent;
+
+    // Safety: SOC below (effective) minimum
+    if (state.batterySoc < effectiveMinSoc) {
+      return { setpointW: 0, mode: 'auto', reason: `SOC (${state.batterySoc}%) below minimum (${effectiveMinSoc}%)`, details: noDetails };
     }
 
     // Safety: no meaningful PV production
@@ -148,8 +159,8 @@ export class Controller {
     // Current actual surplus (what PV produces beyond consumption)
     const currentSurplusW = state.pvPower - state.consumptionPower;
 
-    // Battery full or nearly full
-    if (state.batterySoc >= 99 || batteryNeedKwh <= 0) {
+    // Battery full or nearly full (skip when actively discharging — that's the whole point)
+    if (!isActiveDischargeSlot && (state.batterySoc >= 99 || batteryNeedKwh <= 0)) {
       // At 99% with high PV: limit charge to ~2kW to prevent inverter dumping full surplus.
       // At 100%: battery is truly full, let the system self-regulate.
       const highPvThreshold = 5000;
@@ -213,7 +224,7 @@ export class Controller {
     const surplusKwh = netForecastKwh - batteryNeedKwh;
     const surplusRatio = batteryNeedKwh > 0 ? netForecastKwh / batteryNeedKwh : Infinity;
 
-    if (surplusKwh <= 0 || surplusRatio < 1.5) {
+    if (!isActiveDischargeSlot && (surplusKwh <= 0 || surplusRatio < 1.5)) {
       const now = new Date();
       return {
         setpointW: 0,
@@ -241,24 +252,28 @@ export class Controller {
 
     // --- Plan-guided charge/feed-in decision ---
     if (chargePlan) {
-      const currentSlot = this.findCurrentPlanSlot(chargePlan);
+      const currentSlot = plannedSlot;
       if (currentSlot) {
         // When actual surplus < planned: reduce feed-in first, protect charging.
         // When actual surplus > planned: keep planned charge, extra goes to feed-in.
+        // Negative chargePowerW = active discharge: feed-in includes battery power.
         let desiredChargePowerW: number;
         let feedInW: number;
 
         if (currentSurplusW <= 0) {
           desiredChargePowerW = 0;
           feedInW = 0;
+        } else if (isActiveDischargeSlot) {
+          desiredChargePowerW = currentSlot.chargePowerW; // negative
+          feedInW = Math.min(this.config.maxAcPowerW, currentSurplusW - desiredChargePowerW);
         } else {
           desiredChargePowerW = Math.min(currentSlot.chargePowerW, currentSurplusW);
           feedInW = Math.max(0, currentSurplusW - desiredChargePowerW);
         }
 
-        // Safety: anti-clipping takes priority
+        // Safety: anti-clipping takes priority (skip during active discharge)
         const antiClipChargeW = Math.max(0, state.pvPower - this.config.maxAcPowerW);
-        if (antiClipChargeW > desiredChargePowerW) {
+        if (!isActiveDischargeSlot && antiClipChargeW > desiredChargePowerW) {
           const extra = antiClipChargeW - desiredChargePowerW;
           desiredChargePowerW = antiClipChargeW;
           feedInW = Math.max(0, feedInW - extra);
@@ -288,9 +303,9 @@ export class Controller {
           strategy,
         };
 
-        // Battery discharge correction
+        // Battery discharge correction (skip during active discharge — discharge is intentional)
         let correctedSetpoint = setpoint;
-        const batteryDischargingWhileShouldCharge = batteryNeedKwh > 0 && state.batteryPower < -100;
+        const batteryDischargingWhileShouldCharge = !isActiveDischargeSlot && batteryNeedKwh > 0 && state.batteryPower < -100;
         if (batteryDischargingWhileShouldCharge) {
           const correction = Math.abs(state.batteryPower) + desiredChargePowerW;
           correctedSetpoint = setpoint + correction;

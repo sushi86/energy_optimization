@@ -302,6 +302,58 @@ export default function SettingsPage() {
         </div>
       </div>
 
+      {/* Active Morning Discharge */}
+      <div className="rounded-xl border border-[var(--border)] bg-[var(--bg-card)] p-5 mb-6">
+        <div className="flex items-center justify-between mb-3">
+          <div>
+            <p className="text-sm font-medium text-[var(--text-primary)]">Akku aktiv entladen</p>
+            <p className="text-xs text-[var(--text-secondary)] mt-1">
+              Wenn die Tagesproduktion mindestens 2× über dem Akku-Bedarf liegt, wird der Akku morgens
+              gezielt ins Netz entladen, um nachmittags mehr Clipping aufnehmen zu können.
+              Maximiert den nutzbaren Solarertrag bei sehr sonnigen Tagen.
+            </p>
+          </div>
+          <button
+            onClick={() => {
+              const newConfig = { ...config, activeMorningDischarge: !config?.activeMorningDischarge };
+              setConfig(newConfig);
+              fetch('/api/config', {
+                method: 'PUT',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(newConfig),
+              }).then(() => showMessage('Aktive Entladung ' + (newConfig.activeMorningDischarge ? 'aktiviert' : 'deaktiviert')))
+                .catch(() => showMessage('Fehler beim Speichern'));
+            }}
+            className={`relative w-12 h-6 rounded-full transition-colors shrink-0 cursor-pointer ${
+              config?.activeMorningDischarge
+                ? 'bg-[var(--accent)]'
+                : 'bg-[var(--border)]'
+            }`}
+          >
+            <span
+              className={`absolute top-0.5 left-0.5 w-5 h-5 rounded-full bg-white transition-transform ${
+                config?.activeMorningDischarge ? 'translate-x-6' : ''
+              }`}
+            />
+          </button>
+        </div>
+        <div className={`flex items-center justify-between transition-opacity ${!config?.activeMorningDischarge ? 'opacity-50 pointer-events-none' : ''}`}>
+          <label className="text-sm text-[var(--text-secondary)]">Mindest-SOC beim Entladen</label>
+          <div className="flex items-center gap-2">
+            <input
+              type="number"
+              min={0}
+              max={50}
+              step={1}
+              value={Number(config?.activeMorningDischargeMinSocPercent ?? 5)}
+              onChange={(e) => updateConfigField('activeMorningDischargeMinSocPercent', e.target.value)}
+              className="w-20 rounded-lg border border-[var(--border)] bg-[var(--bg-primary)] px-3 py-2 text-sm text-[var(--text-primary)] text-right focus:outline-none focus:border-[var(--accent)]"
+            />
+            <span className="text-sm text-[var(--text-secondary)]">%</span>
+          </div>
+        </div>
+      </div>
+
       {/* Feed-in Rate */}
       <div className="rounded-xl border border-[var(--border)] bg-[var(--bg-card)] p-5 mb-6">
         <div className="flex items-center justify-between">
@@ -492,7 +544,7 @@ export default function SettingsPage() {
           <p className="text-sm text-[var(--text-secondary)] mb-4">Konfiguration</p>
           <div className="space-y-3">
             {Object.entries(config).map(([key, value]) => {
-              if (typeof value === 'object' || typeof value === 'boolean' || key === 'feedInRateCentPerKwh' || key === 'preferredMaxChargeW' || key === 'consumptionDayW' || key === 'consumptionNightW' || key === 'multiplusRatedPowerW') return null;
+              if (typeof value === 'object' || typeof value === 'boolean' || key === 'feedInRateCentPerKwh' || key === 'preferredMaxChargeW' || key === 'consumptionDayW' || key === 'consumptionNightW' || key === 'multiplusRatedPowerW' || key === 'activeMorningDischargeMinSocPercent') return null;
               return (
                 <div key={key} className="flex flex-col sm:flex-row sm:items-center gap-1 sm:gap-4">
                   <label className="text-sm text-[var(--text-secondary)] sm:w-48 shrink-0">

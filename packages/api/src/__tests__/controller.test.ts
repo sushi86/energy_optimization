@@ -35,6 +35,8 @@ function makeController(overrides: Partial<ControllerDeps> = {}): Controller {
     deadbandW: 50,
     priceOptimization: false,
     allowFeedInNegativePrice: false,
+    activeMorningDischarge: false,
+    activeMorningDischargeMinSocPercent: 5,
     ...overrides,
   });
 }
