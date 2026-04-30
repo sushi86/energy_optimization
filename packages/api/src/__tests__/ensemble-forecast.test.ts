@@ -77,6 +77,39 @@ describe('computeEnsembleForecast', () => {
     expect(result.hours[3].powerW).toBe(1500);
   });
 
+  it('merges slots whose timestamps fall in the same 15-min bucket but differ by seconds', () => {
+    // VRM API can return timestamps with a small seconds offset (e.g. T18:00:27Z).
+    // Solar forecast has clean :00 timestamps. The ensemble must still treat them
+    // as the same slot, otherwise the chart shows two entries for the same minute.
+    const vrm: Forecast = {
+      hours: [
+        { timestamp: new Date('2026-04-30T16:00:27.000Z'), powerW: 0 },
+        { timestamp: new Date('2026-04-30T16:15:27.000Z'), powerW: 0 },
+      ],
+      totalKwh: 0,
+      intervalHours: 0.25,
+    };
+    const solar: Forecast = {
+      hours: [
+        { timestamp: new Date('2026-04-30T16:00:00.000Z'), powerW: 2038 },
+      ],
+      totalKwh: 2.038,
+      intervalHours: 1,
+    };
+
+    const result = computeEnsembleForecast(vrm, solar);
+
+    // Group by 15-min bucket
+    const bucketCounts = new Map<number, number>();
+    for (const h of result.hours) {
+      const bucket = Math.floor(h.timestamp.getTime() / (15 * 60 * 1000));
+      bucketCounts.set(bucket, (bucketCounts.get(bucket) ?? 0) + 1);
+    }
+    for (const [bucket, count] of bucketCounts) {
+      expect(count, `bucket ${bucket} has ${count} entries`).toBe(1);
+    }
+  });
+
   it('handles mismatched hours (some hours only in one source)', () => {
     const vrm: Forecast = {
       hours: [

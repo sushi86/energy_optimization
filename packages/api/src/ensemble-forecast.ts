@@ -64,14 +64,19 @@ export function computeEnsembleForecast(vrm: Forecast, solar: Forecast): Forecas
     return ts >= vrmMinTs && ts <= vrmMaxTs;
   });
 
+  // Bucket timestamps to the 15-min grid so VRM (which can return timestamps
+  // with a seconds offset, e.g. T16:00:27Z) and solar (clean :00) merge correctly.
+  const BUCKET_MS = 15 * 60 * 1000;
+  const bucketKey = (ts: number): number => Math.floor(ts / BUCKET_MS) * BUCKET_MS;
+
   const vrmByTs = new Map<number, ForecastHour>();
   for (const h of vrmSlots) {
-    vrmByTs.set(h.timestamp.getTime(), h);
+    vrmByTs.set(bucketKey(h.timestamp.getTime()), h);
   }
 
   const solarByTs = new Map<number, ForecastHour>();
   for (const h of filteredSolarSlots) {
-    solarByTs.set(h.timestamp.getTime(), h);
+    solarByTs.set(bucketKey(h.timestamp.getTime()), h);
   }
 
   const allTimestamps = new Set([...vrmByTs.keys(), ...solarByTs.keys()]);
@@ -83,13 +88,13 @@ export function computeEnsembleForecast(vrm: Forecast, solar: Forecast): Forecas
 
     if (vrmSlot && solarSlot) {
       ensembleHours.push({
-        timestamp: vrmSlot.timestamp,
+        timestamp: new Date(ts),
         powerW: Math.round((vrmSlot.powerW + solarSlot.powerW) / 2),
       });
     } else if (vrmSlot) {
-      ensembleHours.push({ ...vrmSlot });
+      ensembleHours.push({ timestamp: new Date(ts), powerW: vrmSlot.powerW });
     } else if (solarSlot) {
-      ensembleHours.push({ ...solarSlot });
+      ensembleHours.push({ timestamp: new Date(ts), powerW: solarSlot.powerW });
     }
   }
 
