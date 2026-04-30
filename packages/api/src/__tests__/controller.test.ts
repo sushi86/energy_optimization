@@ -125,6 +125,83 @@ describe('Controller', () => {
     });
   });
 
+  describe('active morning discharge', () => {
+    function makePlanWithDischarge(
+      currentSlotChargeW: number,
+      hasPastDischargeSlot: boolean,
+    ): ChargePlan {
+      const now = new Date();
+      const slotStart = new Date(Math.floor(now.getTime() / 900_000) * 900_000);
+      const slots = [];
+      if (hasPastDischargeSlot) {
+        slots.push({
+          hour: slotStart.getHours(),
+          minute: slotStart.getMinutes(),
+          timestamp: new Date(slotStart.getTime() - 1800_000).toISOString(),
+          chargePowerW: -8000,
+          feedInPowerW: 11000,
+          forecastW: 4000,
+          estimatedSoc: 30,
+          revenueFixedCent: 0, revenueMarketCent: 0,
+          clippingW: 0, consumptionW: 1000, priceMwh: 50,
+        });
+      }
+      slots.push({
+        hour: slotStart.getHours(),
+        minute: slotStart.getMinutes(),
+        timestamp: slotStart.toISOString(),
+        chargePowerW: currentSlotChargeW,
+        feedInPowerW: 5000,
+        forecastW: 6000,
+        estimatedSoc: 10,
+        revenueFixedCent: 0, revenueMarketCent: 0,
+        clippingW: 0, consumptionW: 1000, priceMwh: 50,
+      });
+      return {
+        slots,
+        intervalMinutes: 15,
+        totalFeedInKwh: 0, totalRevenueFixedCent: 0, totalRevenueMarketCent: 0,
+        feedInRateCentPerKwh: 7, estimatedFullHour: null,
+        currentSoc: 10, forecastCorrectionFactor: 1,
+        negativeStreak6hActive: false, negativeStreak6hDeductionCent: 0,
+        debug: {
+          batteryNeedKwh: 0, totalClippingKwh: 0, voluntaryNeedKwh: 0,
+          totalNetSurplusKwh: 0, surplusRatio: 0, tightForecast: false,
+          priceOptCandidateCount: 0,
+        },
+      };
+    }
+
+    it('does not force charge when SOC is below minSoc but plan had earlier active discharge today', () => {
+      const ctrl = makeController({
+        activeMorningDischarge: true,
+        minSocPercent: 20,
+        activeMorningDischargeMinSocPercent: 5,
+      });
+      // Current slot: not a discharge slot (chargePowerW = 0, plan wants feed-in).
+      // But there's a past discharge slot, meaning we're in the post-drain window.
+      const plan = makePlanWithDischarge(0, true);
+      const state = makeState({ pvPower: 6000, consumptionPower: 1000, batterySoc: 10 });
+      const result = ctrl.computeSetpoint(state, makeForecast(30), 25, [], plan);
+      // Old behaviour: setpointW=0 with reason "below minimum" (force refill).
+      // New: bypass the safety floor because the plan owns this drain window.
+      expect(result.reason).not.toContain('below minimum');
+    });
+
+    it('still forces charge when SOC drops below dischargeMinSoc', () => {
+      const ctrl = makeController({
+        activeMorningDischarge: true,
+        minSocPercent: 20,
+        activeMorningDischargeMinSocPercent: 5,
+      });
+      const plan = makePlanWithDischarge(0, true);
+      const state = makeState({ pvPower: 6000, consumptionPower: 1000, batterySoc: 4 });
+      const result = ctrl.computeSetpoint(state, makeForecast(30), 25, [], plan);
+      expect(result.setpointW).toBe(0);
+      expect(result.reason).toContain('SOC');
+    });
+  });
+
   describe('deadband', () => {
     it('does not change setpoint for small differences', () => {
       const ctrl = makeController({ deadbandW: 1500 });

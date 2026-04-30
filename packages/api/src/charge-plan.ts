@@ -170,7 +170,20 @@ export function computeChargePlan(
   // in the simulation will override early voluntary slots, consuming their surplus.
   // By using currentSoc (not effectiveStartSoc), we allocate enough voluntary charge
   // to compensate for the safety-overridden slots and still reach targetSoc.
-  const batteryNeedKwh = Math.max(0, (targetSocPercent / 100 - currentSoc / 100) * batteryCapacityKwh);
+  //
+  // When active morning discharge is enabled and will trigger, the simulation will
+  // drain SOC down to dischargeMinSoc. The late-charging plan must size the need
+  // from that post-discharge floor, otherwise the battery never returns to target.
+  const dischargeMinSoc = config.activeMorningDischargeMinSocPercent ?? 5;
+  const totalNetSurplusKwhPre = analysis.reduce((sum, s) => sum + Math.max(0, s.surplusW) * ih / 1000, 0);
+  const preliminaryNeedKwh = Math.max(0, (targetSocPercent / 100 - currentSoc / 100) * batteryCapacityKwh);
+  const willActivelyDischarge =
+    (config.activeMorningDischarge ?? false)
+    && currentSoc > dischargeMinSoc
+    && preliminaryNeedKwh > 0
+    && totalNetSurplusKwhPre / preliminaryNeedKwh >= 2;
+  const effectiveStartSocForNeed = willActivelyDischarge ? dischargeMinSoc : currentSoc;
+  const batteryNeedKwh = Math.max(0, (targetSocPercent / 100 - effectiveStartSocForNeed / 100) * batteryCapacityKwh);
   const totalClippingKwh = analysis.reduce((sum, s) => sum + Math.max(0, s.clippingW) * ih / 1000, 0);
   // When allowFeedInNegativePrice is false, negative-price slots always charge
   // full surplus in simulation, so subtract their expected contribution to avoid
@@ -188,7 +201,7 @@ export function computeChargePlan(
   // When the net surplus barely covers battery need, the controller ignores the
   // charge plan and sets setpoint=0 (charge everything). Mirror that decision
   // here so the displayed plan matches the actual controller behaviour.
-  const totalNetSurplusKwh = analysis.reduce((sum, s) => sum + Math.max(0, s.surplusW) * ih / 1000, 0);
+  const totalNetSurplusKwh = totalNetSurplusKwhPre;
   const surplusRatio = batteryNeedKwh > 0 ? totalNetSurplusKwh / batteryNeedKwh : Infinity;
   const tightForecast = surplusRatio < 1.5 && batteryNeedKwh > 0;
 
@@ -298,9 +311,7 @@ export function computeChargePlan(
   // actively drain the battery into the grid in the earliest surplus slots
   // so that more clipping later in the day fits into the battery.
   // Triggers only at surplusRatio ≥ 2 (forecast surplus ≥ 2× battery need).
-  const activeDischargeEnabled =
-    (config.activeMorningDischarge ?? false) && surplusRatio >= 2 && !tightForecast;
-  const dischargeMinSoc = config.activeMorningDischargeMinSocPercent ?? 5;
+  const activeDischargeEnabled = willActivelyDischarge && !tightForecast;
   if (activeDischargeEnabled && currentSoc > dischargeMinSoc) {
     let socSim = currentSoc;
     for (let i = 0; i < analysis.length; i++) {
@@ -365,8 +376,11 @@ export function computeChargePlan(
         chargeW = -(actualDischargeKwh / ih * 1000);
       }
       feedInW = 0;
-    } else if (soc < config.minSocPercent) {
-      // Safety: SOC below minimum — charge from surplus before feeding in
+    } else if (soc < config.minSocPercent && !activeDischargeEnabled) {
+      // Safety: SOC below minimum — charge from surplus before feeding in.
+      // Skipped when active morning discharge is in play: the late-charging plan
+      // is sized to refill from dischargeMinSoc → targetSoc, so refilling now
+      // would just consume morning surplus that should be fed in.
       const safetyNeedKwh = ((config.minSocPercent - soc) / 100) * batteryCapacityKwh;
       const safetyChargeW = Math.min(s.surplusW, safetyNeedKwh / ih * 1000);
       chargeW = safetyChargeW;

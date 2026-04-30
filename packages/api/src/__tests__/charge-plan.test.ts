@@ -429,10 +429,14 @@ describe('computeChargePlan', () => {
     const minSoc = Math.min(...plan.slots.map(s => s.estimatedSoc));
     expect(minSoc).toBeGreaterThanOrEqual(5);
 
-    // Total feed-in should exceed total surplus (because battery is feeding too)
-    const totalFeedIn = plan.slots.reduce((s, h) => s + h.feedInPowerW * 0.25 / 1000, 0);
-    const totalSurplus = plan.slots.reduce((s, h) => s + Math.max(0, h.forecastW - h.consumptionW) * 0.25 / 1000, 0);
-    expect(totalFeedIn).toBeGreaterThan(totalSurplus);
+    // Discharge slots feed more into the grid than their PV surplus alone
+    // (because battery power is added on top of PV surplus).
+    const dischargeSlots = plan.slots.filter(s => s.chargePowerW < 0);
+    expect(dischargeSlots.length).toBeGreaterThan(0);
+    for (const s of dischargeSlots) {
+      const surplusW = Math.max(0, s.forecastW - s.consumptionW);
+      expect(s.feedInPowerW).toBeGreaterThan(surplusW);
+    }
   });
 
   it('active morning discharge: not triggered when surplus ratio is below 2', () => {
@@ -470,6 +474,56 @@ describe('computeChargePlan', () => {
 
     const minSoc = Math.min(...plan.slots.map(s => s.estimatedSoc));
     expect(minSoc).toBeGreaterThanOrEqual(30);
+  });
+
+  it('active morning discharge: plan refills battery to targetSoc by end of day', () => {
+    // 8h at 6kW = 48 kWh production. Battery cap 16 kWh.
+    // Without the fix: batteryNeedKwh uses currentSoc=80%, allocates ~3.2 kWh.
+    // After active discharge to 5%, late-charging refills only to ~20%, never 100%.
+    const forecast = makeForecast([6000, 6000, 6000, 6000, 6000, 6000, 6000, 6000], 8);
+    const prices = makePrices();
+    const config = makeConfig({
+      currentSoc: 80,
+      batteryCapacityKwh: 16,
+      priceOptimization: false,
+      activeMorningDischarge: true,
+      activeMorningDischargeMinSocPercent: 5,
+      maxAcPowerW: 12000,
+    });
+
+    const plan = computeChargePlan(forecast, prices, config);
+
+    const finalSoc = plan.slots[plan.slots.length - 1].estimatedSoc;
+    expect(finalSoc).toBeGreaterThanOrEqual(99);
+  });
+
+  it('active morning discharge: no safety refill to minSoc after morning drain', () => {
+    // After active discharge drops SOC well below minSocPercent, the simulation
+    // must NOT force a safety refill to minSoc — the late-charging plan handles it.
+    const forecast = makeForecast([6000, 6000, 6000, 6000, 6000, 6000, 6000, 6000], 8);
+    const prices = makePrices();
+    const config = makeConfig({
+      currentSoc: 80,
+      minSocPercent: 20,
+      batteryCapacityKwh: 16,
+      priceOptimization: false,
+      activeMorningDischarge: true,
+      activeMorningDischargeMinSocPercent: 5,
+      maxAcPowerW: 12000,
+    });
+
+    const plan = computeChargePlan(forecast, prices, config);
+
+    // Find the active discharge slots (negative chargePowerW)
+    const lastDischargeIdx = plan.slots.reduce(
+      (last, s, i) => (s.chargePowerW < 0 ? i : last), -1);
+    expect(lastDischargeIdx).toBeGreaterThanOrEqual(0);
+
+    // The slot immediately after active discharge must FEED IN, not refill to minSoc.
+    // (Currently buggy: simulation's safety branch charges all surplus → feedIn=0.)
+    const postDischargeSlot = plan.slots[lastDischargeIdx + 1];
+    expect(postDischargeSlot).toBeDefined();
+    expect(postDischargeSlot.feedInPowerW).toBeGreaterThan(0);
   });
 
   it('charges to minSoc before feeding in when SOC is below safety minimum', () => {

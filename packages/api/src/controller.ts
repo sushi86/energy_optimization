@@ -132,12 +132,19 @@ export class Controller {
       return { setpointW: 0, mode: 'winter', reason: 'Winter mode: forecast below threshold', details: noDetails };
     }
 
-    // Active-discharge slots get a lowered SOC floor
+    // Active-discharge slots get a lowered SOC floor.
+    // The lowered floor also persists for the rest of the day after the discharge
+    // window, so that the post-drain SOC is allowed to stay low until the
+    // late-charging plan refills it — instead of forcing an immediate refill
+    // to minSocPercent that consumes morning surplus that should be fed in.
     const plannedSlot = chargePlan ? this.findCurrentPlanSlot(chargePlan) : null;
     const isActiveDischargeSlot = plannedSlot != null
       && plannedSlot.chargePowerW < 0
       && this.config.activeMorningDischarge;
-    const effectiveMinSoc = isActiveDischargeSlot
+    const planHasDischargeToday = this.config.activeMorningDischarge
+      && chargePlan != null
+      && chargePlan.slots.some(s => s.chargePowerW < 0);
+    const effectiveMinSoc = (isActiveDischargeSlot || planHasDischargeToday)
       ? this.config.activeMorningDischargeMinSocPercent
       : minSocPercent;
 
