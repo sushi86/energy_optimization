@@ -1,6 +1,6 @@
 import { MqttService } from './mqtt-service.js';
 import { VrmService } from './vrm-service.js';
-import { Controller } from './controller.js';
+import { Controller, type ControllerDeps } from './controller.js';
 import { ForecastSolarService } from './forecast-solar-service.js';
 import { computeEnsembleForecast } from './ensemble-forecast.js';
 import { computeChargePlan } from './charge-plan.js';
@@ -262,7 +262,13 @@ export class AppState {
       this.correctionSamples = [];
     }
     Object.assign(this.config, updates);
-    this.controller.updateConfig({
+    this.controller.updateConfig(this.buildControllerConfig());
+    this.saveConfigOverrides();
+    return { ...this.config };
+  }
+
+  private buildControllerConfig(): ControllerDeps {
+    return {
       batteryCapacityKwh: this.config.batteryCapacityKwh,
       minSocPercent: this.config.minSocPercent,
       targetSocPercent: this.config.targetSocPercent,
@@ -273,9 +279,7 @@ export class AppState {
       allowFeedInNegativePrice: this.config.allowFeedInNegativePrice ?? false,
       activeMorningDischarge: this.config.activeMorningDischarge ?? false,
       activeMorningDischargeMinSocPercent: this.config.activeMorningDischargeMinSocPercent ?? 5,
-    });
-    this.saveConfigOverrides();
-    return { ...this.config };
+    };
   }
 
   private loadConfigOverrides(): void {
@@ -283,16 +287,7 @@ export class AppState {
       const content = fs.readFileSync(this.configOverridesPath, 'utf-8');
       const overrides = JSON.parse(content) as Partial<AppStateOptions>;
       Object.assign(this.config, overrides);
-      this.controller.updateConfig({
-        batteryCapacityKwh: this.config.batteryCapacityKwh,
-        minSocPercent: this.config.minSocPercent,
-        targetSocPercent: this.config.targetSocPercent,
-        maxAcPowerW: this.config.maxAcPowerW,
-        winterModeThresholdFactor: this.config.winterModeThresholdFactor,
-        deadbandW: this.config.deadbandW,
-        priceOptimization: this.config.priceOptimization ?? false,
-        allowFeedInNegativePrice: this.config.allowFeedInNegativePrice ?? false,
-      });
+      this.controller.updateConfig(this.buildControllerConfig());
       console.log('[config] Loaded overrides from disk:', Object.keys(overrides).join(', '));
     } catch {
       // No overrides file yet — use defaults
