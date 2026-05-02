@@ -1595,6 +1595,31 @@ export default function Dashboard() {
             )}
             {controller.details && (
               <div className="mt-3 space-y-2">
+                {controller.details.dischargeMode && controller.details.dischargeBand && (
+                  <div className="rounded-md border border-[var(--accent)]/40 bg-[var(--accent)]/10 px-3 py-2 text-sm">
+                    <div className="font-medium text-[var(--accent)]">
+                      {controller.details.dischargeMode === 'active' && (
+                        <>Aktiv entladen → Halten {controller.details.dischargeBand.floor}–{controller.details.dischargeBand.holdTarget}%</>
+                      )}
+                      {controller.details.dischargeMode === 'hold' && (
+                        <>Halten {controller.details.dischargeBand.floor}–{controller.details.dischargeBand.holdTarget}% — Akku ruht (Setpoint 0 W)</>
+                      )}
+                      {controller.details.dischargeMode === 'trickle' && (
+                        <>Sanft auffüllen auf {controller.details.dischargeBand.holdTarget}% (PV-Überschuss)</>
+                      )}
+                    </div>
+                    {controller.details.dischargeReason && (
+                      <div className="mt-1 text-xs text-[var(--text-secondary)]">
+                        {controller.details.dischargeReason}
+                      </div>
+                    )}
+                    {controller.details.dischargePlanEndsAt && controller.details.dischargeMode === 'active' && (
+                      <div className="mt-1 text-xs text-[var(--text-secondary)]">
+                        Entladung bis {new Date(controller.details.dischargePlanEndsAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}, danach Late-Charging
+                      </div>
+                    )}
+                  </div>
+                )}
                 {/* Strategy summary — show strategy if available, fallback to goal */}
                 <p className="text-sm font-medium text-[var(--accent)]">
                   {controller.details.strategy || controller.details.goal}

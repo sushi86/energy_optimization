@@ -25,6 +25,10 @@ export interface ControllerDetails {
     mode: 'feed-in' | 'charge' | 'negative';
     reason: string;
   };
+  dischargeMode?: 'active' | 'hold' | 'trickle';
+  dischargeBand?: { floor: number; holdTarget: number };
+  dischargeReason?: string;
+  dischargePlanEndsAt?: string;
 }
 
 export interface ChargePlanSlot {
