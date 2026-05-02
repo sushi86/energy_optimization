@@ -52,6 +52,10 @@ export interface ControllerDetails {
     mode: 'feed-in' | 'charge' | 'negative';
     reason: string;
   };
+  dischargeMode?: 'active' | 'hold' | 'trickle';
+  dischargeBand?: { floor: number; holdTarget: number };
+  dischargeReason?: string;
+  dischargePlanEndsAt?: string;
 }
 
 export interface SetpointResult {
@@ -143,7 +147,7 @@ export class Controller {
       && this.config.activeMorningDischarge;
     const planHasDischargeToday = this.config.activeMorningDischarge
       && chargePlan != null
-      && chargePlan.slots.some(s => s.chargePowerW < 0);
+      && (chargePlan.slots.some(s => s.chargePowerW < 0) || chargePlan.activeDischarge != null);
     const effectiveMinSoc = (isActiveDischargeSlot || planHasDischargeToday)
       ? this.config.activeMorningDischargeMinSocPercent
       : minSocPercent;
@@ -166,8 +170,11 @@ export class Controller {
     // Current actual surplus (what PV produces beyond consumption)
     const currentSurplusW = state.pvPower - state.consumptionPower;
 
-    // Battery full or nearly full (skip when actively discharging — that's the whole point)
-    if (!isActiveDischargeSlot && (state.batterySoc >= 99 || batteryNeedKwh <= 0)) {
+    // Battery full or nearly full (skip when in any discharge-related slot — that's the whole point)
+    const isAnyDischargeRelatedSlot = isActiveDischargeSlot
+      || plannedSlot?.dischargeState === 'hold'
+      || plannedSlot?.dischargeState === 'trickle';
+    if (!isAnyDischargeRelatedSlot && (state.batterySoc >= 99 || batteryNeedKwh <= 0)) {
       // At 99% with high PV: limit charge to ~2kW to prevent inverter dumping full surplus.
       // At 100%: battery is truly full, let the system self-regulate.
       const highPvThreshold = 5000;
@@ -231,7 +238,10 @@ export class Controller {
     const surplusKwh = netForecastKwh - batteryNeedKwh;
     const surplusRatio = batteryNeedKwh > 0 ? netForecastKwh / batteryNeedKwh : Infinity;
 
-    if (!isActiveDischargeSlot && (surplusKwh <= 0 || surplusRatio < 1.5)) {
+    const isDischargeRelatedSlot = isActiveDischargeSlot
+      || plannedSlot?.dischargeState === 'hold'
+      || plannedSlot?.dischargeState === 'trickle';
+    if (!isDischargeRelatedSlot && (surplusKwh <= 0 || surplusRatio < 1.5)) {
       const now = new Date();
       return {
         setpointW: 0,
@@ -261,6 +271,10 @@ export class Controller {
     if (chargePlan) {
       const currentSlot = plannedSlot;
       if (currentSlot) {
+        const dischargeState = currentSlot.dischargeState; // 'active' | 'hold' | 'trickle' | undefined
+        const isHoldSlot = dischargeState === 'hold';
+        const isTrickleSlot = dischargeState === 'trickle';
+
         // When actual surplus < planned: reduce feed-in first, protect charging.
         // When actual surplus > planned: keep planned charge, extra goes to feed-in.
         // Negative chargePowerW = active discharge: feed-in includes battery power.
@@ -273,7 +287,11 @@ export class Controller {
         } else if (isActiveDischargeSlot) {
           desiredChargePowerW = currentSlot.chargePowerW; // negative
           feedInW = Math.min(this.config.maxAcPowerW, currentSurplusW - desiredChargePowerW);
+        } else if (isHoldSlot) {
+          desiredChargePowerW = 0;
+          feedInW = Math.min(this.config.maxAcPowerW, currentSurplusW);
         } else {
+          // Trickle (positive chargePowerW capped) reuses normal path: planned chargePowerW is the cap.
           desiredChargePowerW = Math.min(currentSlot.chargePowerW, currentSurplusW);
           feedInW = Math.max(0, currentSurplusW - desiredChargePowerW);
         }
@@ -290,6 +308,12 @@ export class Controller {
 
         const now = new Date();
         const plannedSurplusW = currentSlot.chargePowerW + currentSlot.feedInPowerW;
+        const ad = chargePlan.activeDischarge;
+        const dischargeStrategyOverride =
+          isHoldSlot && ad ? `Halten ${ad.floorPercent}–${ad.holdTargetPercent}% — Akku ruht (Setpoint 0 W)` :
+          isTrickleSlot && ad ? `Sanftes Auffüllen auf ${ad.holdTargetPercent}% (max ${fmtW(currentSlot.chargePowerW)} aus PV)` :
+          dischargeState === 'active' && ad ? `Aktiv entladen — Ziel: Halten bei ${ad.holdTargetPercent}%` :
+          null;
         const strategy = `Ladeplan: ${fmtW(desiredChargePowerW)} laden, ${fmtW(feedInW)} einspeisen (Plan: ${fmtW(currentSlot.chargePowerW)}/${fmtW(currentSlot.feedInPowerW)}, Überschuss ${fmtW(currentSurplusW)}/${fmtW(plannedSurplusW)})`;
 
         const details: ControllerDetails = {
@@ -307,7 +331,13 @@ export class Controller {
           forcedChargeKwh: 0,
           voluntaryChargeKwh: 0,
           clippingHours: 0,
-          strategy,
+          strategy: dischargeStrategyOverride ?? strategy,
+          ...(dischargeState ? { dischargeMode: dischargeState } : {}),
+          ...(ad ? {
+            dischargeBand: { floor: ad.floorPercent, holdTarget: ad.holdTargetPercent },
+            dischargeReason: ad.reason,
+            ...(ad.endsAt ? { dischargePlanEndsAt: ad.endsAt } : {}),
+          } : {}),
         };
 
         // Battery discharge correction (skip during active discharge — discharge is intentional)

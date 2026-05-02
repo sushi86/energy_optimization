@@ -201,6 +201,86 @@ describe('Controller', () => {
       expect(result.setpointW).toBe(0);
       expect(result.reason).toContain('SOC');
     });
+
+    function makePlanWithSlot(args: {
+      slotChargeW: number;
+      slotFeedInW: number;
+      dischargeState?: 'active' | 'hold' | 'trickle';
+      activeDischarge?: { floorPercent: number; holdTargetPercent: number; reason: string; endsAt: string | null };
+    }): ChargePlan {
+      const now = new Date();
+      const slotStart = new Date(Math.floor(now.getTime() / 900_000) * 900_000);
+      const slot = {
+        hour: slotStart.getHours(),
+        minute: slotStart.getMinutes(),
+        timestamp: slotStart.toISOString(),
+        chargePowerW: args.slotChargeW,
+        feedInPowerW: args.slotFeedInW,
+        forecastW: 6000,
+        estimatedSoc: 12.5,
+        revenueFixedCent: 0, revenueMarketCent: 0,
+        clippingW: 0, consumptionW: 1000, priceMwh: 50,
+        ...(args.dischargeState ? { dischargeState: args.dischargeState } : {}),
+      };
+      return {
+        slots: [slot],
+        intervalMinutes: 15,
+        totalFeedInKwh: 0, totalRevenueFixedCent: 0, totalRevenueMarketCent: 0,
+        feedInRateCentPerKwh: 7, estimatedFullHour: null,
+        currentSoc: 12.5, forecastCorrectionFactor: 1,
+        negativeStreak6hActive: false, negativeStreak6hDeductionCent: 0,
+        activeDischarge: args.activeDischarge ?? null,
+        debug: {
+          batteryNeedKwh: 0, totalClippingKwh: 0, voluntaryNeedKwh: 0,
+          totalNetSurplusKwh: 0, surplusRatio: 0, tightForecast: false,
+          priceOptCandidateCount: 0,
+        },
+      };
+    }
+
+    describe('hold mode', () => {
+      it('uses chargeW=0 and full feed-in when current slot is in hold state', () => {
+        const ctrl = makeController({
+          activeMorningDischarge: true,
+          minSocPercent: 20,
+          activeMorningDischargeMinSocPercent: 12,
+        });
+        const plan = makePlanWithSlot({
+          slotChargeW: 0,
+          slotFeedInW: 4000,
+          dischargeState: 'hold',
+          activeDischarge: { floorPercent: 12, holdTargetPercent: 13, reason: 'test reason', endsAt: null },
+        });
+        const state = makeState({ pvPower: 5000, consumptionPower: 1000, batterySoc: 12.5 });
+        const result = ctrl.computeSetpoint(state, makeForecast(30), 25, [], plan);
+
+        expect(result.details?.dischargeMode).toBe('hold');
+        expect(result.details?.dischargeBand).toEqual({ floor: 12, holdTarget: 13 });
+        expect(result.details?.dischargeReason).toBe('test reason');
+        expect(result.details?.desiredChargePowerW).toBe(0);
+        expect(result.details?.feedInW).toBeGreaterThan(0);
+      });
+
+      it('exposes dischargePlanEndsAt when summary provides it', () => {
+        const ctrl = makeController({
+          activeMorningDischarge: true,
+          minSocPercent: 20,
+          activeMorningDischargeMinSocPercent: 12,
+        });
+        const endsAt = new Date(Date.now() + 3600_000).toISOString();
+        const plan = makePlanWithSlot({
+          slotChargeW: -3000,
+          slotFeedInW: 7000,
+          dischargeState: 'active',
+          activeDischarge: { floorPercent: 12, holdTargetPercent: 13, reason: 'r', endsAt },
+        });
+        const state = makeState({ pvPower: 5000, consumptionPower: 1000, batterySoc: 50 });
+        const result = ctrl.computeSetpoint(state, makeForecast(30), 25, [], plan);
+
+        expect(result.details?.dischargeMode).toBe('active');
+        expect(result.details?.dischargePlanEndsAt).toBe(endsAt);
+      });
+    });
   });
 
   describe('deadband', () => {
