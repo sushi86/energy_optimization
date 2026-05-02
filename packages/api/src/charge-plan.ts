@@ -23,6 +23,8 @@ export interface ChargePlanConfig {
   forecastCorrectionOverride?: number | null;
 }
 
+export type DischargeState = 'active' | 'hold' | 'trickle';
+
 export interface ChargePlanSlot {
   hour: number;
   minute: number;
@@ -37,6 +39,8 @@ export interface ChargePlanSlot {
   consumptionW: number;
   /** Day-ahead market price in EUR/MWh for this slot (null = no price data) */
   priceMwh: number | null;
+  /** Set when this slot is part of an active-morning-discharge sequence. */
+  dischargeState?: DischargeState;
 }
 
 export interface ChargePlan {
@@ -53,6 +57,13 @@ export interface ChargePlan {
   negativeStreak6hActive: boolean;
   /** Cents deducted from EEG revenue due to §51 negative price streak rule */
   negativeStreak6hDeductionCent: number;
+  /** Summary of active morning discharge for this plan, if any. */
+  activeDischarge: {
+    floorPercent: number;
+    holdTargetPercent: number;
+    reason: string;
+    endsAt: string | null;
+  } | null;
   /** Debug info for charge planning decisions */
   debug: {
     batteryNeedKwh: number;
@@ -506,6 +517,7 @@ export function computeChargePlan(
     forecastCorrectionFactor: Math.round(forecastCorrectionFactor * 100) / 100,
     negativeStreak6hActive: negativeStreak6hDeductionCent > 0,
     negativeStreak6hDeductionCent: Math.round(negativeStreak6hDeductionCent * 100) / 100,
+    activeDischarge: null,
     debug: {
       batteryNeedKwh: Math.round(batteryNeedKwh * 100) / 100,
       totalClippingKwh: Math.round(totalClippingKwh * 100) / 100,

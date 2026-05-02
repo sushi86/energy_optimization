@@ -164,6 +164,7 @@ describe('Controller', () => {
         feedInRateCentPerKwh: 7, estimatedFullHour: null,
         currentSoc: 10, forecastCorrectionFactor: 1,
         negativeStreak6hActive: false, negativeStreak6hDeductionCent: 0,
+        activeDischarge: null,
         debug: {
           batteryNeedKwh: 0, totalClippingKwh: 0, voluntaryNeedKwh: 0,
           totalNetSurplusKwh: 0, surplusRatio: 0, tightForecast: false,
@@ -623,6 +624,7 @@ describe('Controller', () => {
         forecastCorrectionFactor: 1,
         negativeStreak6hActive: false,
         negativeStreak6hDeductionCent: 0,
+        activeDischarge: null,
         debug: { batteryNeedKwh: 0, totalClippingKwh: 0, voluntaryNeedKwh: 0, totalNetSurplusKwh: 0, surplusRatio: Infinity, tightForecast: false, priceOptCandidateCount: 0 },
       };
       const result = ctrl.computeSetpoint(state, makeForecast(30), 25, [], plan);
@@ -684,6 +686,7 @@ describe('Controller', () => {
         forecastCorrectionFactor: 1,
         negativeStreak6hActive: false,
         negativeStreak6hDeductionCent: 0,
+        activeDischarge: null,
         debug: { batteryNeedKwh: 0, totalClippingKwh: 0, voluntaryNeedKwh: 0, totalNetSurplusKwh: 0, surplusRatio: Infinity, tightForecast: false, priceOptCandidateCount: 0 },
       };
 
@@ -745,6 +748,7 @@ describe('Controller', () => {
         forecastCorrectionFactor: 1,
         negativeStreak6hActive: false,
         negativeStreak6hDeductionCent: 0,
+        activeDischarge: null,
         debug: { batteryNeedKwh: 0, totalClippingKwh: 0, voluntaryNeedKwh: 0, totalNetSurplusKwh: 0, surplusRatio: Infinity, tightForecast: false, priceOptCandidateCount: 0 },
       };
 
@@ -789,6 +793,7 @@ describe('Controller', () => {
         forecastCorrectionFactor: 1,
         negativeStreak6hActive: false,
         negativeStreak6hDeductionCent: 0,
+        activeDischarge: null,
         debug: { batteryNeedKwh: 0, totalClippingKwh: 0, voluntaryNeedKwh: 0, totalNetSurplusKwh: 0, surplusRatio: Infinity, tightForecast: false, priceOptCandidateCount: 0 },
       };
 
