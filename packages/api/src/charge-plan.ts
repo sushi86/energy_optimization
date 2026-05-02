@@ -534,6 +534,16 @@ export function computeChargePlan(
 
   const adjustedRevenueFixedCent = totalRevenueFixedCent - negativeStreak6hDeductionCent;
 
+  const lastActiveSlot = [...slots].reverse().find(s => s.dischargeState === 'active');
+  const activeDischarge: ChargePlan['activeDischarge'] = activeDischargeEnabled
+    ? {
+        floorPercent: dischargeFloorSoc,
+        holdTargetPercent: dischargeHoldTargetSoc,
+        reason: `Prognose ${surplusRatio.toFixed(1)}× Bedarf — Platz für mittäglichen Clipping schaffen`,
+        endsAt: lastActiveSlot ? lastActiveSlot.timestamp : null,
+      }
+    : null;
+
   return {
     slots,
     intervalMinutes: 15,
@@ -546,7 +556,7 @@ export function computeChargePlan(
     forecastCorrectionFactor: Math.round(forecastCorrectionFactor * 100) / 100,
     negativeStreak6hActive: negativeStreak6hDeductionCent > 0,
     negativeStreak6hDeductionCent: Math.round(negativeStreak6hDeductionCent * 100) / 100,
-    activeDischarge: null,
+    activeDischarge,
     debug: {
       batteryNeedKwh: Math.round(batteryNeedKwh * 100) / 100,
       totalClippingKwh: Math.round(totalClippingKwh * 100) / 100,

@@ -636,5 +636,28 @@ describe('computeChargePlan', () => {
       const reachedHold = plan.slots.find(s => s.estimatedSoc >= 13);
       expect(reachedHold).toBeDefined();
     });
+
+    it('exposes activeDischarge summary on the plan when feature fires', () => {
+      const forecast = dischargeForecast();
+      const config = makeConfig({
+        currentSoc: 50,
+        activeMorningDischarge: true,
+        activeMorningDischargeMinSocPercent: 12,
+      });
+
+      const plan = computeChargePlan(forecast, makePrices(), config);
+
+      expect(plan.activeDischarge).not.toBeNull();
+      expect(plan.activeDischarge!.floorPercent).toBe(12);
+      expect(plan.activeDischarge!.holdTargetPercent).toBe(13);
+      expect(plan.activeDischarge!.reason).toMatch(/Prognose/);
+      expect(plan.activeDischarge!.endsAt).not.toBeNull();
+    });
+
+    it('activeDischarge is null when feature disabled', () => {
+      const forecast = dischargeForecast();
+      const plan = computeChargePlan(forecast, makePrices(), makeConfig({ activeMorningDischarge: false }));
+      expect(plan.activeDischarge).toBeNull();
+    });
   });
 });
