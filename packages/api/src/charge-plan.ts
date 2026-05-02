@@ -333,7 +333,7 @@ export function computeChargePlan(
   if (activeDischargeEnabled && currentSoc > dischargeHoldTargetSoc) {
     let socSim = currentSoc;
     for (let i = 0; i < analysis.length; i++) {
-      if (socSim <= dischargeFloorSoc) break;
+      if (socSim <= dischargeHoldTargetSoc) break;
       const s = analysis[i];
       // Only discharge while there is PV surplus and before clipping begins.
       if (s.surplusW <= 0) continue;
@@ -344,8 +344,8 @@ export function computeChargePlan(
       // Headroom on AC limit: remaining export capacity after PV surplus.
       const headroomW = Math.max(0, maxAcPowerW - s.surplusW);
       if (headroomW <= 0) break;
-      // Cap by SOC floor.
-      const maxKwhFromSoc = ((socSim - dischargeFloorSoc) / 100) * batteryCapacityKwh;
+      // Cap by SOC hold target (floor + 1pp deadband).
+      const maxKwhFromSoc = ((socSim - dischargeHoldTargetSoc) / 100) * batteryCapacityKwh;
       const maxKwhThisSlot = Math.min(headroomW * ih / 1000, maxKwhFromSoc);
       if (maxKwhThisSlot <= 0.01) break;
       const dischargeW = maxKwhThisSlot / ih * 1000;
@@ -375,8 +375,8 @@ export function computeChargePlan(
 
     if (isActiveDischargeSlot) {
       // Active morning discharge: feed PV surplus + battery power to grid.
-      // Cap discharge so SOC doesn't drop below dischargeFloorSoc.
-      const maxKwhFromSoc = Math.max(0, ((soc - dischargeFloorSoc) / 100) * batteryCapacityKwh);
+      // Cap discharge so SOC doesn't drop below dischargeHoldTargetSoc (1pp deadband).
+      const maxKwhFromSoc = Math.max(0, ((soc - dischargeHoldTargetSoc) / 100) * batteryCapacityKwh);
       const requestedDischargeKwh = Math.abs(voluntaryChargeW[i]) * ih / 1000;
       const actualDischargeKwh = Math.min(requestedDischargeKwh, maxKwhFromSoc);
       chargeW = -(actualDischargeKwh / ih * 1000);

@@ -574,8 +574,7 @@ describe('computeChargePlan', () => {
       expect(activeSlots).toHaveLength(0);
     });
 
-    // Enabled in Task 4 once forward-sim sets dischargeState
-    it.skip('starts active discharge when SOC is clearly above hold band, stops at holdTarget', () => {
+    it('starts active discharge when SOC is clearly above hold band, stops at holdTarget', () => {
       const forecast = dischargeForecast();
       const config = makeConfig({
         currentSoc: 50,
@@ -587,11 +586,13 @@ describe('computeChargePlan', () => {
 
       const plan = computeChargePlan(forecast, makePrices(), config);
 
-      const activeSlots = plan.slots.filter(s => s.dischargeState === 'active');
-      expect(activeSlots.length).toBeGreaterThan(0);
+      // TODO(Task 4): switch back to dischargeState === 'active' once forward-sim sets it.
+      // For now detect active discharge by negative chargePowerW.
+      const dischargeSlots = plan.slots.filter(s => s.chargePowerW < 0);
+      expect(dischargeSlots.length).toBeGreaterThan(0);
       // SOC darf nicht unter holdTarget (13) fallen während aktiver Entladung
-      const minSoc = Math.min(...activeSlots.map(s => s.estimatedSoc));
-      expect(minSoc).toBeGreaterThanOrEqual(13 - 0.5); // Rundungs-Toleranz
+      const minSoc = Math.min(...dischargeSlots.map(s => s.estimatedSoc));
+      expect(minSoc).toBeGreaterThanOrEqual(13 - 0.5); // Rundungs-Toleranz (0.1 SOC-Rundung)
     });
   });
 });
