@@ -370,8 +370,13 @@ export function computeChargePlan(
 
     let chargeW: number;
     let feedInW: number;
+    let slotState: DischargeState | undefined;
 
     const isActiveDischargeSlot = activeDischargeEnabled && voluntaryChargeW[i] < 0 && s.surplusW > 0;
+    const morningDischargeFeatureOn = (config.activeMorningDischarge ?? false);
+    const inMorningDischargeWindow = morningDischargeFeatureOn && s.clippingW <= 0;
+    const inHoldBand = soc >= dischargeFloorSoc && soc <= dischargeHoldTargetSoc;
+    const belowFloor = soc < dischargeFloorSoc;
 
     if (isActiveDischargeSlot) {
       // Active morning discharge: feed PV surplus + battery power to grid.
@@ -381,6 +386,22 @@ export function computeChargePlan(
       const actualDischargeKwh = Math.min(requestedDischargeKwh, maxKwhFromSoc);
       chargeW = -(actualDischargeKwh / ih * 1000);
       feedInW = isNegativePrice ? 0 : Math.max(0, s.surplusW - chargeW);
+      slotState = 'active';
+    } else if (inMorningDischargeWindow && belowFloor && s.surplusW > 0 && !isNegativePrice && voluntaryChargeW[i] <= 0) {
+      // Trickle refill: SOC dropped below floor — refill from surplus, capped at
+      // preferredMaxChargeW, only up to holdTarget. No grid pull.
+      // Skipped when the voluntary charge plan has explicitly allocated charge here.
+      const refillKwh = ((dischargeHoldTargetSoc - soc) / 100) * batteryCapacityKwh;
+      const refillW = Math.min(s.surplusW, preferredMaxChargeW, refillKwh / ih * 1000);
+      chargeW = Math.max(0, refillW);
+      feedInW = Math.max(0, s.surplusW - chargeW);
+      slotState = 'trickle';
+    } else if (inMorningDischargeWindow && inHoldBand && s.surplusW > 0 && voluntaryChargeW[i] <= 0) {
+      // Hold mode: SOC inside deadband — battery rests, all surplus to feed-in.
+      // Skipped when the voluntary charge plan has explicitly allocated charge here.
+      chargeW = 0;
+      feedInW = isNegativePrice ? 0 : s.surplusW;
+      slotState = 'hold';
     } else if (s.surplusW < 0) {
       // Deficit: consumption exceeds PV — drain battery, but not below minSoc
       if (soc <= config.minSocPercent) {
@@ -460,6 +481,7 @@ export function computeChargePlan(
       clippingW: Math.round(s.clippingW),
       consumptionW: Math.round(s.consumptionW),
       priceMwh: s.price,
+      ...(slotState ? { dischargeState: slotState } : {}),
     });
   }
 

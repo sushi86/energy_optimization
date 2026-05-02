@@ -586,13 +586,55 @@ describe('computeChargePlan', () => {
 
       const plan = computeChargePlan(forecast, makePrices(), config);
 
-      // TODO(Task 4): switch back to dischargeState === 'active' once forward-sim sets it.
-      // For now detect active discharge by negative chargePowerW.
-      const dischargeSlots = plan.slots.filter(s => s.chargePowerW < 0);
-      expect(dischargeSlots.length).toBeGreaterThan(0);
+      const activeSlots = plan.slots.filter(s => s.dischargeState === 'active');
+      expect(activeSlots.length).toBeGreaterThan(0);
       // SOC darf nicht unter holdTarget (13) fallen während aktiver Entladung
-      const minSoc = Math.min(...dischargeSlots.map(s => s.estimatedSoc));
+      const minSoc = Math.min(...activeSlots.map(s => s.estimatedSoc));
       expect(minSoc).toBeGreaterThanOrEqual(13 - 0.5); // Rundungs-Toleranz (0.1 SOC-Rundung)
+    });
+
+    it('emits hold slots (chargeW=0, full feed-in) when SOC is in deadband during discharge window', () => {
+      const forecast = dischargeForecast();
+      const config = makeConfig({
+        currentSoc: 13.5, // gerade über holdTarget=13 → minimaler Discharge auf 13, danach hold
+        targetSocPercent: 100,
+        minSocPercent: 20,
+        activeMorningDischarge: true,
+        activeMorningDischargeMinSocPercent: 12,
+      });
+
+      const plan = computeChargePlan(forecast, makePrices(), config);
+
+      const holdSlots = plan.slots.filter(s => s.dischargeState === 'hold');
+      expect(holdSlots.length).toBeGreaterThan(0);
+      for (const s of holdSlots) {
+        expect(s.chargePowerW).toBe(0);
+        expect(s.feedInPowerW).toBeGreaterThan(0);
+      }
+    });
+
+    it('emits trickle slots (capped charge from surplus) when SOC drops below floor during discharge window', () => {
+      const forecast = dischargeForecast();
+      const config = makeConfig({
+        currentSoc: 11, // unter floor=12, im aktiven Discharge-Fenster
+        targetSocPercent: 100,
+        minSocPercent: 20,
+        activeMorningDischarge: true,
+        activeMorningDischargeMinSocPercent: 12,
+        preferredMaxChargeW: 5000,
+      });
+
+      const plan = computeChargePlan(forecast, makePrices(), config);
+
+      const trickleSlots = plan.slots.filter(s => s.dischargeState === 'trickle');
+      expect(trickleSlots.length).toBeGreaterThan(0);
+      for (const s of trickleSlots) {
+        expect(s.chargePowerW).toBeGreaterThan(0);
+        expect(s.chargePowerW).toBeLessThanOrEqual(5000);
+      }
+      // After trickle refill, SOC reaches at least holdTarget
+      const reachedHold = plan.slots.find(s => s.estimatedSoc >= 13);
+      expect(reachedHold).toBeDefined();
     });
   });
 });
