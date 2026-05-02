@@ -551,4 +551,47 @@ describe('computeChargePlan', () => {
       expect(s.chargePowerW).toBeGreaterThan(0);
     }
   });
+
+  describe('active morning discharge hysteresis', () => {
+    function dischargeForecast(): Forecast {
+      // ~10 kW PV für 8h → ~80 kWh Tag, weit > 16 kWh Bedarf → surplusRatio >> 2
+      return makeForecast([10000, 10000, 10000, 10000, 10000, 10000, 10000, 10000], 7);
+    }
+
+    it('does not start active discharge when SOC is at or just above floor (within hold band)', () => {
+      const forecast = dischargeForecast();
+      const config = makeConfig({
+        currentSoc: 13, // floor 12, holdTarget 13 — start gate ist > 13
+        targetSocPercent: 100,
+        minSocPercent: 20,
+        activeMorningDischarge: true,
+        activeMorningDischargeMinSocPercent: 12,
+      });
+
+      const plan = computeChargePlan(forecast, makePrices(), config);
+
+      const activeSlots = plan.slots.filter(s => s.dischargeState === 'active');
+      expect(activeSlots).toHaveLength(0);
+    });
+
+    // Enabled in Task 4 once forward-sim sets dischargeState
+    it.skip('starts active discharge when SOC is clearly above hold band, stops at holdTarget', () => {
+      const forecast = dischargeForecast();
+      const config = makeConfig({
+        currentSoc: 50,
+        targetSocPercent: 100,
+        minSocPercent: 20,
+        activeMorningDischarge: true,
+        activeMorningDischargeMinSocPercent: 12,
+      });
+
+      const plan = computeChargePlan(forecast, makePrices(), config);
+
+      const activeSlots = plan.slots.filter(s => s.dischargeState === 'active');
+      expect(activeSlots.length).toBeGreaterThan(0);
+      // SOC darf nicht unter holdTarget (13) fallen während aktiver Entladung
+      const minSoc = Math.min(...activeSlots.map(s => s.estimatedSoc));
+      expect(minSoc).toBeGreaterThanOrEqual(13 - 0.5); // Rundungs-Toleranz
+    });
+  });
 });

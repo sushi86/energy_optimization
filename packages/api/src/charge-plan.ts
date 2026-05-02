@@ -183,17 +183,24 @@ export function computeChargePlan(
   // to compensate for the safety-overridden slots and still reach targetSoc.
   //
   // When active morning discharge is enabled and will trigger, the simulation will
-  // drain SOC down to dischargeMinSoc. The late-charging plan must size the need
+  // drain SOC down to dischargeFloorSoc. The late-charging plan must size the need
   // from that post-discharge floor, otherwise the battery never returns to target.
-  const dischargeMinSoc = config.activeMorningDischargeMinSocPercent ?? 5;
+  //
+  // --- Active morning discharge: hysteresis band ---
+  // floor      = configured minimum (hard lower bound during morning discharge window)
+  // holdTarget = floor + HOLD_BUFFER_PCT (discharge stop and trickle-refill target)
+  // 1 pp deadband prevents oscillation at the floor.
+  const HOLD_BUFFER_PCT = 1;
+  const dischargeFloorSoc = config.activeMorningDischargeMinSocPercent ?? 5;
+  const dischargeHoldTargetSoc = dischargeFloorSoc + HOLD_BUFFER_PCT;
   const totalNetSurplusKwhPre = analysis.reduce((sum, s) => sum + Math.max(0, s.surplusW) * ih / 1000, 0);
   const preliminaryNeedKwh = Math.max(0, (targetSocPercent / 100 - currentSoc / 100) * batteryCapacityKwh);
   const willActivelyDischarge =
     (config.activeMorningDischarge ?? false)
-    && currentSoc > dischargeMinSoc
+    && currentSoc > dischargeHoldTargetSoc
     && preliminaryNeedKwh > 0
     && totalNetSurplusKwhPre / preliminaryNeedKwh >= 2;
-  const effectiveStartSocForNeed = willActivelyDischarge ? dischargeMinSoc : currentSoc;
+  const effectiveStartSocForNeed = willActivelyDischarge ? dischargeFloorSoc : currentSoc;
   const batteryNeedKwh = Math.max(0, (targetSocPercent / 100 - effectiveStartSocForNeed / 100) * batteryCapacityKwh);
   const totalClippingKwh = analysis.reduce((sum, s) => sum + Math.max(0, s.clippingW) * ih / 1000, 0);
   // When allowFeedInNegativePrice is false, negative-price slots always charge
@@ -323,10 +330,10 @@ export function computeChargePlan(
   // so that more clipping later in the day fits into the battery.
   // Triggers only at surplusRatio ≥ 2 (forecast surplus ≥ 2× battery need).
   const activeDischargeEnabled = willActivelyDischarge && !tightForecast;
-  if (activeDischargeEnabled && currentSoc > dischargeMinSoc) {
+  if (activeDischargeEnabled && currentSoc > dischargeHoldTargetSoc) {
     let socSim = currentSoc;
     for (let i = 0; i < analysis.length; i++) {
-      if (socSim <= dischargeMinSoc) break;
+      if (socSim <= dischargeFloorSoc) break;
       const s = analysis[i];
       // Only discharge while there is PV surplus and before clipping begins.
       if (s.surplusW <= 0) continue;
@@ -338,7 +345,7 @@ export function computeChargePlan(
       const headroomW = Math.max(0, maxAcPowerW - s.surplusW);
       if (headroomW <= 0) break;
       // Cap by SOC floor.
-      const maxKwhFromSoc = ((socSim - dischargeMinSoc) / 100) * batteryCapacityKwh;
+      const maxKwhFromSoc = ((socSim - dischargeFloorSoc) / 100) * batteryCapacityKwh;
       const maxKwhThisSlot = Math.min(headroomW * ih / 1000, maxKwhFromSoc);
       if (maxKwhThisSlot <= 0.01) break;
       const dischargeW = maxKwhThisSlot / ih * 1000;
@@ -368,8 +375,8 @@ export function computeChargePlan(
 
     if (isActiveDischargeSlot) {
       // Active morning discharge: feed PV surplus + battery power to grid.
-      // Cap discharge so SOC doesn't drop below dischargeMinSoc.
-      const maxKwhFromSoc = Math.max(0, ((soc - dischargeMinSoc) / 100) * batteryCapacityKwh);
+      // Cap discharge so SOC doesn't drop below dischargeFloorSoc.
+      const maxKwhFromSoc = Math.max(0, ((soc - dischargeFloorSoc) / 100) * batteryCapacityKwh);
       const requestedDischargeKwh = Math.abs(voluntaryChargeW[i]) * ih / 1000;
       const actualDischargeKwh = Math.min(requestedDischargeKwh, maxKwhFromSoc);
       chargeW = -(actualDischargeKwh / ih * 1000);
@@ -390,7 +397,7 @@ export function computeChargePlan(
     } else if (soc < config.minSocPercent && !activeDischargeEnabled) {
       // Safety: SOC below minimum — charge from surplus before feeding in.
       // Skipped when active morning discharge is in play: the late-charging plan
-      // is sized to refill from dischargeMinSoc → targetSoc, so refilling now
+      // is sized to refill from dischargeFloorSoc → targetSoc, so refilling now
       // would just consume morning surplus that should be fed in.
       const safetyNeedKwh = ((config.minSocPercent - soc) / 100) * batteryCapacityKwh;
       const safetyChargeW = Math.min(s.surplusW, safetyNeedKwh / ih * 1000);
