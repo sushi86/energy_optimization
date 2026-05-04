@@ -194,12 +194,17 @@ export function computeChargePlan(
   const dischargeFloorSoc = config.activeMorningDischargeMinSocPercent ?? 5;
   const dischargeHoldTargetSoc = dischargeFloorSoc + HOLD_BUFFER_PCT;
   const totalNetSurplusKwhPre = analysis.reduce((sum, s) => sum + Math.max(0, s.surplusW) * ih / 1000, 0);
-  const preliminaryNeedKwh = Math.max(0, (targetSocPercent / 100 - currentSoc / 100) * batteryCapacityKwh);
+  // Gate active discharge on the POST-DRAIN refill need, not the current
+  // gap to target. Otherwise the trigger fires on a few-kWh need (high SOC),
+  // we drain to floor, and then the day's surplus turns out to be too small
+  // to refill the now-much-larger gap. The threshold (2×) gives headroom for
+  // forecast revisions; reaching targetSoc has priority over morning feed-in.
+  const postDrainNeedKwh = Math.max(0, (targetSocPercent / 100 - dischargeFloorSoc / 100) * batteryCapacityKwh);
   const willActivelyDischarge =
     (config.activeMorningDischarge ?? false)
     && currentSoc > dischargeHoldTargetSoc
-    && preliminaryNeedKwh > 0
-    && totalNetSurplusKwhPre / preliminaryNeedKwh >= 2;
+    && postDrainNeedKwh > 0
+    && totalNetSurplusKwhPre / postDrainNeedKwh >= 2;
   const effectiveStartSocForNeed = willActivelyDischarge ? dischargeFloorSoc : currentSoc;
   const batteryNeedKwh = Math.max(0, (targetSocPercent / 100 - effectiveStartSocForNeed / 100) * batteryCapacityKwh);
   const totalClippingKwh = analysis.reduce((sum, s) => sum + Math.max(0, s.clippingW) * ih / 1000, 0);
