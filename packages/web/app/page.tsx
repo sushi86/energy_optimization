@@ -379,7 +379,7 @@ function ForecastCorrectionControl({ factor, serverOverride }: { factor: number;
   );
 }
 
-function ForecastChart({ data, actual, vrm, solar, corrected, hoveredSlot, setHoveredSlot }: { data: ForecastHour[]; actual: ForecastHour[]; vrm?: ForecastHour[]; solar?: ForecastHour[]; corrected?: ForecastHour[]; hoveredSlot: number | null; setHoveredSlot: (i: number | null) => void }) {
+function ForecastChart({ data, actual, vrm, solar, corrected, hoveredSlot, setHoveredSlot, maxAcPowerW }: { data: ForecastHour[]; actual: ForecastHour[]; vrm?: ForecastHour[]; solar?: ForecastHour[]; corrected?: ForecastHour[]; hoveredSlot: number | null; setHoveredSlot: (i: number | null) => void; maxAcPowerW?: number }) {
 
   // Build lookups by local HH:MM key
   const forecastBySlot = new Map<string, number>();
@@ -424,15 +424,15 @@ function ForecastChart({ data, actual, vrm, solar, corrected, hoveredSlot, setHo
             </span>
           </div>
         ))}
-        {/* Clipping threshold line at ~11kW */}
-        {maxPower > 11000 && (
+        {/* AC-Limit threshold line (maxAcPowerW from config) */}
+        {maxAcPowerW != null && maxAcPowerW > 0 && maxAcPowerW < maxPower && (
           <div
             className="absolute left-0 right-0 pointer-events-none z-10"
-            style={{ bottom: `${(11000 / maxPower) * 100}%` }}
+            style={{ bottom: `${(maxAcPowerW / maxPower) * 100}%` }}
           >
-            <div className="w-full" style={{ borderTop: '1.5px dashed rgba(234, 179, 8, 0.5)' }} />
-            <span className="absolute right-0 -top-3 text-[9px] text-yellow-400/70">
-              AC-Limit
+            <div className="w-full" style={{ borderTop: '2.5px dashed rgba(234, 179, 8, 0.7)' }} />
+            <span className="absolute right-0 -top-3 text-[9px] text-yellow-400/80 font-medium">
+              AC-Limit {(maxAcPowerW / 1000).toFixed(0)} kW
             </span>
           </div>
         )}
@@ -542,7 +542,7 @@ function findPriceForSlot(prices: PriceEntry[], hour: number, minute: number): n
   return 0;
 }
 
-function ChargePlanChart({ plan, hoveredSlot, setHoveredSlot, actualFeedIn, actualBattery, actualConsumption, actualSoc, prices, pvPeakKwp }: {
+function ChargePlanChart({ plan, hoveredSlot, setHoveredSlot, actualFeedIn, actualBattery, actualConsumption, actualSoc, prices, pvPeakKwp, maxAcPowerW }: {
   plan: ChargePlan;
   hoveredSlot: number | null;
   setHoveredSlot: (i: number | null) => void;
@@ -552,6 +552,7 @@ function ChargePlanChart({ plan, hoveredSlot, setHoveredSlot, actualFeedIn, actu
   actualSoc: Map<string, number>;
   prices: PriceEntry[];
   pvPeakKwp?: number;
+  maxAcPowerW?: number;
 }) {
 
   const [visibleSeries, setVisibleSeries] = useState({ charge: true, clipping: true, feedIn: true, consumption: true, soc: true });
@@ -727,6 +728,19 @@ function ChargePlanChart({ plan, hoveredSlot, setHoveredSlot, actualFeedIn, actu
             </span>
           </div>
         ))}
+
+        {/* AC limit threshold line (maxAcPowerW from config) */}
+        {maxAcPowerW != null && maxAcPowerW > 0 && maxAcPowerW < maxPower && (
+          <div
+            className="absolute left-0 right-0 pointer-events-none z-0"
+            style={{ bottom: `${(maxAcPowerW / maxPower) * 100}%` }}
+          >
+            <div className="w-full" style={{ borderTop: '2.5px dashed rgba(234, 179, 8, 0.7)' }} />
+            <span className="absolute right-0 -top-3 text-[9px] text-yellow-400/80 font-medium">
+              AC-Limit {(maxAcPowerW / 1000).toFixed(0)} kW
+            </span>
+          </div>
+        )}
 
         {/* SOC line overlay using SVG — fixed 96-slot grid */}
         {visibleSeries.soc && (
@@ -928,7 +942,7 @@ function ChargePlanChart({ plan, hoveredSlot, setHoveredSlot, actualFeedIn, actu
                         />
                       )}
                     </> : <>
-                      {/* Future/current slots: plan bars — consumption (red) → feed-in (green) → clipping (yellow) → voluntary (blue) */}
+                      {/* Future/current slots: plan bars — consumption (red) → feed-in (green) → voluntary (blue) → clipping (yellow, top) */}
                       {consW > 0 && (
                         <div
                           className="absolute bottom-0 w-full transition-opacity"
@@ -955,27 +969,27 @@ function ChargePlanChart({ plan, hoveredSlot, setHoveredSlot, actualFeedIn, actu
                           }}
                         />
                       )}
-                      {clippingW > 0 && (
+                      {voluntaryW > 0 && (
                         <div
                           className="absolute w-full transition-opacity"
                           style={{
                             bottom: totalPct > 0 ? `${((consPct + feedInPct) / totalPct) * 100}%` : '0%',
-                            height: totalPct > 0 ? `${(clippingPct / totalPct) * 100}%` : '0%',
-                            backgroundColor: '#eab308',
+                            height: totalPct > 0 ? `${(voluntaryPct / totalPct) * 100}%` : '0%',
+                            backgroundColor: '#3b82f6',
                             opacity: dimmed ? 0.2 : isCurrent ? 1 : 0.8,
                             minHeight: '2px',
                             outline: isCurrent ? '1.5px solid white' : 'none',
-                            borderRadius: !(voluntaryW > 0) ? '2px 2px 0 0' : '0',
+                            borderRadius: !(clippingW > 0) ? '2px 2px 0 0' : '0',
                           }}
                         />
                       )}
-                      {voluntaryW > 0 && (
+                      {clippingW > 0 && (
                         <div
                           className="absolute w-full rounded-t transition-opacity"
                           style={{
-                            bottom: totalPct > 0 ? `${((consPct + feedInPct + clippingPct) / totalPct) * 100}%` : '0%',
-                            height: totalPct > 0 ? `${(voluntaryPct / totalPct) * 100}%` : '0%',
-                            backgroundColor: '#3b82f6',
+                            bottom: totalPct > 0 ? `${((consPct + feedInPct + voluntaryPct) / totalPct) * 100}%` : '0%',
+                            height: totalPct > 0 ? `${(clippingPct / totalPct) * 100}%` : '0%',
+                            backgroundColor: '#eab308',
                             opacity: dimmed ? 0.2 : isCurrent ? 1 : 0.8,
                             minHeight: '2px',
                             outline: isCurrent ? '1.5px solid white' : 'none',
@@ -1699,7 +1713,7 @@ export default function Dashboard() {
           </div>
           {/* Forecast correction slider — always visible */}
           <ForecastCorrectionControl factor={corrFactor} serverOverride={status?.forecastCorrectionOverride} />
-          <ForecastChart data={forecast} actual={actual} vrm={vrmForecast} solar={solarForecast} corrected={correctedForecast} hoveredSlot={hoveredSlot} setHoveredSlot={setHoveredSlot} />
+          <ForecastChart data={forecast} actual={actual} vrm={vrmForecast} solar={solarForecast} corrected={correctedForecast} hoveredSlot={hoveredSlot} setHoveredSlot={setHoveredSlot} maxAcPowerW={status?.maxAcPowerW} />
         </div>
         );
       })()}
@@ -1736,7 +1750,7 @@ export default function Dashboard() {
       {/* Charge Plan Chart */}
       {status?.chargePlan && status.chargePlan.slots.length > 0 && (
         <div className="rounded-xl border border-[var(--border)] bg-[var(--bg-card)] p-5 mt-4">
-          <ChargePlanChart plan={status.chargePlan} hoveredSlot={hoveredSlot} setHoveredSlot={setHoveredSlot} actualFeedIn={actualFeedIn} actualBattery={actualBattery} actualConsumption={actualConsumption} actualSoc={actualSoc} prices={prices} pvPeakKwp={status.pvPeakKwp} />
+          <ChargePlanChart plan={status.chargePlan} hoveredSlot={hoveredSlot} setHoveredSlot={setHoveredSlot} actualFeedIn={actualFeedIn} actualBattery={actualBattery} actualConsumption={actualConsumption} actualSoc={actualSoc} prices={prices} pvPeakKwp={status.pvPeakKwp} maxAcPowerW={status.maxAcPowerW} />
         </div>
       )}
 

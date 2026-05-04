@@ -80,6 +80,7 @@ export interface SystemStatus {
   priceOptimizationEnabled?: boolean;
   forecastCorrectionOverride?: number | null;
   multiplusRatedPowerW?: number;
+  maxAcPowerW?: number;
   pvPeakKwp?: number;
   regulation?: { lastTime: string; intervalMs: number };
   chargePlan?: ChargePlan | null;
