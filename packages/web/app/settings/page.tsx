@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import Link from 'next/link';
 import { usePushNotifications } from '../../hooks/use-push-notifications';
 
@@ -22,7 +22,6 @@ export default function SettingsPage() {
   const [config, setConfig] = useState<Config | null>(null);
   const [mode, setMode] = useState('auto');
   const [setpoint, setSetpoint] = useState(-5000);
-  const [saving, setSaving] = useState(false);
   const [message, setMessage] = useState('');
   const [pvSettings, setPvSettings] = useState<PvSystemSettings | null>(null);
   const [savingPv, setSavingPv] = useState(false);
@@ -53,22 +52,6 @@ export default function SettingsPage() {
   const showMessage = (msg: string) => {
     setMessage(msg);
     setTimeout(() => setMessage(''), 3000);
-  };
-
-  const saveConfig = async () => {
-    setSaving(true);
-    try {
-      const res = await fetch('/api/config', {
-        method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(config),
-      });
-      if (res.ok) showMessage('Konfiguration gespeichert');
-      else showMessage('Fehler beim Speichern');
-    } catch {
-      showMessage('Fehler beim Speichern');
-    }
-    setSaving(false);
   };
 
   const changeMode = async (newMode: string) => {
@@ -113,10 +96,48 @@ export default function SettingsPage() {
     setSavingPv(false);
   };
 
+  const saveTimers = useRef<Record<string, ReturnType<typeof setTimeout>>>({});
+  const flashTimers = useRef<Record<string, ReturnType<typeof setTimeout>>>({});
+  const [savedFlash, setSavedFlash] = useState<Record<string, boolean>>({});
+
+  const commitField = async (key: string, rawValue: string) => {
+    const num = Number(rawValue);
+    const value = rawValue !== '' && !isNaN(num) ? num : rawValue;
+    try {
+      const res = await fetch('/api/config', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ [key]: value }),
+      });
+      if (!res.ok) return;
+      setSavedFlash((s) => ({ ...s, [key]: true }));
+      if (flashTimers.current[key]) clearTimeout(flashTimers.current[key]);
+      flashTimers.current[key] = setTimeout(() => {
+        setSavedFlash((s) => {
+          const cp = { ...s };
+          delete cp[key];
+          return cp;
+        });
+      }, 1500);
+    } catch { /* ignore */ }
+  };
+
   const updateConfigField = (key: string, value: string) => {
     if (!config) return;
     const num = Number(value);
     setConfig({ ...config, [key]: isNaN(num) ? value : num });
+    if (saveTimers.current[key]) clearTimeout(saveTimers.current[key]);
+    saveTimers.current[key] = setTimeout(() => {
+      void commitField(key, value);
+    }, 500);
+  };
+
+  const flushConfigField = (key: string, value: string) => {
+    if (saveTimers.current[key]) {
+      clearTimeout(saveTimers.current[key]);
+      delete saveTimers.current[key];
+    }
+    void commitField(key, value);
   };
 
   return (
@@ -347,9 +368,11 @@ export default function SettingsPage() {
               step={1}
               value={Number(config?.activeMorningDischargeMinSocPercent ?? 5)}
               onChange={(e) => updateConfigField('activeMorningDischargeMinSocPercent', e.target.value)}
+              onBlur={(e) => flushConfigField('activeMorningDischargeMinSocPercent', e.target.value)}
               className="w-20 rounded-lg border border-[var(--border)] bg-[var(--bg-primary)] px-3 py-2 text-sm text-[var(--text-primary)] text-right focus:outline-none focus:border-[var(--accent)]"
             />
             <span className="text-sm text-[var(--text-secondary)]">%</span>
+            <SavedTick visible={!!savedFlash.activeMorningDischargeMinSocPercent} />
           </div>
         </div>
       </div>
@@ -369,9 +392,11 @@ export default function SettingsPage() {
               step={0.1}
               value={Number(config?.feedInRateCentPerKwh ?? 7)}
               onChange={(e) => updateConfigField('feedInRateCentPerKwh', e.target.value)}
+              onBlur={(e) => flushConfigField('feedInRateCentPerKwh', e.target.value)}
               className="w-20 rounded-lg border border-[var(--border)] bg-[var(--bg-primary)] px-3 py-2 text-sm text-[var(--text-primary)] text-right focus:outline-none focus:border-[var(--accent)]"
             />
             <span className="text-sm text-[var(--text-secondary)]">ct/kWh</span>
+            <SavedTick visible={!!savedFlash.feedInRateCentPerKwh} />
           </div>
         </div>
       </div>
@@ -391,9 +416,11 @@ export default function SettingsPage() {
               step={500}
               value={Number(config?.preferredMaxChargeW ?? 5000)}
               onChange={(e) => updateConfigField('preferredMaxChargeW', e.target.value)}
+              onBlur={(e) => flushConfigField('preferredMaxChargeW', e.target.value)}
               className="w-24 rounded-lg border border-[var(--border)] bg-[var(--bg-primary)] px-3 py-2 text-sm text-[var(--text-primary)] text-right focus:outline-none focus:border-[var(--accent)]"
             />
             <span className="text-sm text-[var(--text-secondary)]">W</span>
+            <SavedTick visible={!!savedFlash.preferredMaxChargeW} />
           </div>
         </div>
       </div>
@@ -413,9 +440,11 @@ export default function SettingsPage() {
               step={500}
               value={Number(config?.multiplusRatedPowerW ?? 4000)}
               onChange={(e) => updateConfigField('multiplusRatedPowerW', e.target.value)}
+              onBlur={(e) => flushConfigField('multiplusRatedPowerW', e.target.value)}
               className="w-24 rounded-lg border border-[var(--border)] bg-[var(--bg-primary)] px-3 py-2 text-sm text-[var(--text-primary)] text-right focus:outline-none focus:border-[var(--accent)]"
             />
             <span className="text-sm text-[var(--text-secondary)]">W</span>
+            <SavedTick visible={!!savedFlash.multiplusRatedPowerW} />
           </div>
         </div>
       </div>
@@ -435,9 +464,11 @@ export default function SettingsPage() {
                 step={50}
                 value={Number(config?.consumptionDayW ?? 500)}
                 onChange={(e) => updateConfigField('consumptionDayW', e.target.value)}
+                onBlur={(e) => flushConfigField('consumptionDayW', e.target.value)}
                 className="w-24 rounded-lg border border-[var(--border)] bg-[var(--bg-primary)] px-3 py-2 text-sm text-[var(--text-primary)] text-right focus:outline-none focus:border-[var(--accent)]"
               />
               <span className="text-sm text-[var(--text-secondary)]">W</span>
+              <SavedTick visible={!!savedFlash.consumptionDayW} />
             </div>
           </div>
           <div className="flex items-center justify-between">
@@ -448,9 +479,11 @@ export default function SettingsPage() {
                 step={50}
                 value={Number(config?.consumptionNightW ?? 350)}
                 onChange={(e) => updateConfigField('consumptionNightW', e.target.value)}
+                onBlur={(e) => flushConfigField('consumptionNightW', e.target.value)}
                 className="w-24 rounded-lg border border-[var(--border)] bg-[var(--bg-primary)] px-3 py-2 text-sm text-[var(--text-primary)] text-right focus:outline-none focus:border-[var(--accent)]"
               />
               <span className="text-sm text-[var(--text-secondary)]">W</span>
+              <SavedTick visible={!!savedFlash.consumptionNightW} />
             </div>
           </div>
         </div>
@@ -550,25 +583,35 @@ export default function SettingsPage() {
                   <label className="text-sm text-[var(--text-secondary)] sm:w-48 shrink-0">
                     {key}
                   </label>
-                  <input
-                    type={typeof value === 'number' ? 'number' : 'text'}
-                    value={String(value)}
-                    onChange={(e) => updateConfigField(key, e.target.value)}
-                    className="w-full rounded-lg border border-[var(--border)] bg-[var(--bg-primary)] px-3 py-2 text-sm text-[var(--text-primary)] focus:outline-none focus:border-[var(--accent)]"
-                  />
+                  <div className="flex items-center gap-2 w-full">
+                    <input
+                      type={typeof value === 'number' ? 'number' : 'text'}
+                      value={String(value)}
+                      onChange={(e) => updateConfigField(key, e.target.value)}
+                      onBlur={(e) => flushConfigField(key, e.target.value)}
+                      className="flex-1 rounded-lg border border-[var(--border)] bg-[var(--bg-primary)] px-3 py-2 text-sm text-[var(--text-primary)] focus:outline-none focus:border-[var(--accent)]"
+                    />
+                    <SavedTick visible={!!savedFlash[key]} />
+                  </div>
                 </div>
               );
             })}
           </div>
-          <button
-            onClick={saveConfig}
-            disabled={saving}
-            className="mt-4 px-6 py-2 rounded-lg text-sm font-medium bg-[var(--accent)] text-[var(--bg-primary)] hover:bg-[var(--accent-dim)] transition-colors disabled:opacity-50"
-          >
-            {saving ? 'Speichern...' : 'Speichern'}
-          </button>
         </div>
       )}
     </div>
+  );
+}
+
+function SavedTick({ visible }: { visible: boolean }) {
+  return (
+    <span
+      aria-hidden={!visible}
+      className={`inline-flex items-center justify-center w-5 h-5 rounded-full text-xs transition-opacity duration-200 ${
+        visible ? 'opacity-100 bg-emerald-500/20 text-emerald-400' : 'opacity-0'
+      }`}
+    >
+      ✓
+    </span>
   );
 }
