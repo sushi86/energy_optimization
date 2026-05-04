@@ -142,12 +142,17 @@ export class Controller {
     // late-charging plan refills it — instead of forcing an immediate refill
     // to minSocPercent that consumes morning surplus that should be fed in.
     const plannedSlot = chargePlan ? this.findCurrentPlanSlot(chargePlan) : null;
+    // Only treat slots flagged 'active' by the plan as active discharge.
+    // chargePowerW < 0 alone is ambiguous: it also occurs for normal load-cover
+    // discharge when forecast PV < forecast consumption (no dischargeState set),
+    // which must NOT trigger active grid feed-in.
     const isActiveDischargeSlot = plannedSlot != null
-      && plannedSlot.chargePowerW < 0
+      && plannedSlot.dischargeState === 'active'
       && this.config.activeMorningDischarge;
     const planHasDischargeToday = this.config.activeMorningDischarge
       && chargePlan != null
-      && (chargePlan.slots.some(s => s.chargePowerW < 0) || chargePlan.activeDischarge != null);
+      && (chargePlan.activeDischarge != null
+        || chargePlan.slots.some(s => s.dischargeState === 'active'));
     const effectiveMinSoc = (isActiveDischargeSlot || planHasDischargeToday)
       ? this.config.activeMorningDischargeMinSocPercent
       : minSocPercent;

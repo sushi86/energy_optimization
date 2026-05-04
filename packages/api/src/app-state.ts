@@ -264,6 +264,9 @@ export class AppState {
     Object.assign(this.config, updates);
     this.controller.updateConfig(this.buildControllerConfig());
     this.saveConfigOverrides();
+    // Apply the new config immediately instead of waiting up to regulationIntervalMs
+    // for the next tick.
+    void this.regulate();
     return { ...this.config };
   }
 

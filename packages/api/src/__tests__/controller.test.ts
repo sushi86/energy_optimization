@@ -144,6 +144,7 @@ describe('Controller', () => {
           estimatedSoc: 30,
           revenueFixedCent: 0, revenueMarketCent: 0,
           clippingW: 0, consumptionW: 1000, priceMwh: 50,
+          dischargeState: 'active' as const,
         });
       }
       slots.push({
