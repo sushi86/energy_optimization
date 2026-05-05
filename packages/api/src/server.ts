@@ -111,6 +111,22 @@ let lastPriceError: string | null = null;
 export function getLastPriceError(): string | null { return lastPriceError; }
 export function setLastPriceError(err: string | null): void { lastPriceError = err; }
 
+function buildVerschattungSnapshot(engine: VerschattungEngine) {
+  const ctx = engine.buildContext();
+  const tracker = engine.trackerSnapshot();
+  return {
+    covers: Array.from(ctx.coverPositions.entries()).map(([id, pos]) => {
+      const t = tracker[id] ?? { state: 'IDLE', expectedPosition: null, lastEvent: null };
+      return { id, position: pos, state: t.state, expectedPosition: t.expectedPosition, lastEvent: t.lastEvent ?? null };
+    }),
+    inputs: {
+      sun: ctx.sun, pvPowerW: ctx.pvPowerW, pvThresholdW: ctx.pvThresholdW,
+      indoorTempC: ctx.indoorTempC, isSummerMode: ctx.isSummerMode,
+    },
+    recentDecisions: engine.recentDecisions().slice(0, 20),
+  };
+}
+
 export function buildServer(options: ServerOptions = {}): FastifyInstance {
   const app = Fastify({ logger: !options.testing });
   const state = options.appState;
@@ -145,11 +161,13 @@ export function buildServer(options: ServerOptions = {}): FastifyInstance {
   setInterval(() => void fetchMpptTemperature(), 60_000);
 
   // Throttled broadcast on MQTT state changes
+  let broadcast: (() => void) | null = null;
+
   if (state) {
     let lastBroadcast = 0;
     let pendingTimeout: ReturnType<typeof setTimeout> | null = null;
 
-    const broadcast = () => {
+    broadcast = () => {
       const s = state.mqtt.getState();
       const config = state.getConfig();
 
@@ -214,6 +232,9 @@ export function buildServer(options: ServerOptions = {}): FastifyInstance {
         heatPumpPowerW: nibePoller?.getPowerW() ?? null,
         wallboxPowerW: wallboxPoller?.getPowerW() ?? null,
         timestamp: s.timestamp.toISOString(),
+        verschattung: options.verschattungEngine ? {
+          state: buildVerschattungSnapshot(options.verschattungEngine),
+        } : null,
       });
 
       for (const client of wsClients) {
@@ -233,11 +254,11 @@ export function buildServer(options: ServerOptions = {}): FastifyInstance {
           clearTimeout(pendingTimeout);
           pendingTimeout = null;
         }
-        broadcast();
+        broadcast!();
       } else if (!pendingTimeout) {
         pendingTimeout = setTimeout(() => {
           pendingTimeout = null;
-          broadcast();
+          broadcast!();
         }, 500 - elapsed);
       }
     });
@@ -732,6 +753,12 @@ export function buildServer(options: ServerOptions = {}): FastifyInstance {
     registerVerschattungRoutes(app, {
       engine: options.verschattungEngine,
       configPath: options.verschattungConfigPath,
+    });
+  }
+
+  if (options.verschattungEngine) {
+    options.verschattungEngine.onDecision(() => {
+      try { broadcast?.(); } catch { /* ignore */ }
     });
   }
 
