@@ -107,6 +107,88 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/verschattung/state": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Current Verschattung state (cover positions + states + engine inputs) */
+        get: operations["getVerschattungState"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/verschattung/decisions": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Decision log (most recent first) */
+        get: operations["getVerschattungDecisions"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/verschattung/config": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["getVerschattungConfig"];
+        put: operations["putVerschattungConfig"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/verschattung/cover/{id}/position": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put: operations["putVerschattungCoverPosition"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/verschattung/cover/{id}/auto": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["postVerschattungCoverAuto"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
 }
 export type webhooks = Record<string, never>;
 export interface components {
@@ -179,6 +261,77 @@ export interface components {
         };
         ErrorResponse: {
             error: string;
+        };
+        VerschattungStateResponse: {
+            covers: components["schemas"]["VerschattungCoverState"][];
+            inputs: components["schemas"]["VerschattungInputs"];
+        };
+        VerschattungCoverState: {
+            id: string;
+            /** @enum {string} */
+            zone: "ost" | "sued" | "west";
+            /** @enum {string} */
+            floor: "EG" | "OG";
+            label: string;
+            currentPosition: number | null;
+            /** @enum {string} */
+            state: "IDLE" | "CLOSED_BY_AUTO" | "OVERRIDE";
+            expectedPosition: number | null;
+            lastEvent?: {
+                ts?: string;
+                /** @enum {string} */
+                source?: "auto" | "user" | "reset";
+                fromPosition?: number | null;
+                toPosition?: number | null;
+                reason?: string | null;
+            } | null;
+        };
+        VerschattungInputs: {
+            sun: {
+                azimuthDeg: number;
+                elevationDeg: number;
+            };
+            pvPowerW: number | null;
+            pvThresholdW: number;
+            indoorTempC: number | null;
+            isSummerMode: boolean;
+        };
+        VerschattungDecision: {
+            coverId: string;
+            /** @enum {string} */
+            zone: "ost" | "sued" | "west";
+            /** @enum {string} */
+            action: "close" | "open" | "skip";
+            reason: string;
+            evaluatedConditions: {
+                name: string;
+                ok: boolean;
+                detail: string;
+            }[];
+            appliedAt: string;
+            /** @enum {string} */
+            resultingState: "IDLE" | "CLOSED_BY_AUTO" | "OVERRIDE";
+            expectedPosition?: number | null;
+        };
+        VerschattungConfig: {
+            zones: {
+                ost: components["schemas"]["VerschattungZoneTunables"];
+                sued: components["schemas"]["VerschattungZoneTunables"];
+                west: components["schemas"]["VerschattungZoneTunables"];
+            };
+            pvThreshold: {
+                peakWp: number;
+                factor: number;
+                floorW: number;
+            };
+            indoorTempThresholdC: number;
+            hysteresisIndoorTempC: number;
+            hysteresisPvFactor: number;
+            hysteresisPvDurationMinutes: number;
+            summerModeMonths: number[];
+        };
+        VerschattungZoneTunables: {
+            closePosition: number;
         };
     };
     responses: never;
@@ -347,6 +500,136 @@ export interface operations {
                 content: {
                     "application/json": components["schemas"]["ErrorResponse"];
                 };
+            };
+        };
+    };
+    getVerschattungState: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Snapshot */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["VerschattungStateResponse"];
+                };
+            };
+        };
+    };
+    getVerschattungDecisions: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Decision array */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["VerschattungDecision"][];
+                };
+            };
+        };
+    };
+    getVerschattungConfig: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Config */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["VerschattungConfig"];
+                };
+            };
+        };
+    };
+    putVerschattungConfig: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["VerschattungConfig"];
+            };
+        };
+        responses: {
+            /** @description Updated config */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["VerschattungConfig"];
+                };
+            };
+        };
+    };
+    putVerschattungCoverPosition: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": {
+                    position: number;
+                };
+            };
+        };
+        responses: {
+            /** @description Sent */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    postVerschattungCoverAuto: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Override released */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
             };
         };
     };

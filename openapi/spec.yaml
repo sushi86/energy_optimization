@@ -110,6 +110,94 @@ paths:
               schema:
                 $ref: '#/components/schemas/ErrorResponse'
 
+  /api/verschattung/state:
+    get:
+      operationId: getVerschattungState
+      summary: Current Verschattung state (cover positions + states + engine inputs)
+      responses:
+        '200':
+          description: Snapshot
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/VerschattungStateResponse'
+
+  /api/verschattung/decisions:
+    get:
+      operationId: getVerschattungDecisions
+      summary: Decision log (most recent first)
+      responses:
+        '200':
+          description: Decision array
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/VerschattungDecision'
+
+  /api/verschattung/config:
+    get:
+      operationId: getVerschattungConfig
+      responses:
+        '200':
+          description: Config
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/VerschattungConfig'
+    put:
+      operationId: putVerschattungConfig
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/VerschattungConfig'
+      responses:
+        '200':
+          description: Updated config
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/VerschattungConfig'
+
+  /api/verschattung/cover/{id}/position:
+    put:
+      operationId: putVerschattungCoverPosition
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                position:
+                  type: number
+              required: [position]
+      responses:
+        '204':
+          description: Sent
+
+  /api/verschattung/cover/{id}/auto:
+    post:
+      operationId: postVerschattungCoverAuto
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '204':
+          description: Override released
+
 components:
   schemas:
     HealthResponse:
@@ -245,3 +333,108 @@ components:
       properties:
         error:
           type: string
+
+    VerschattungStateResponse:
+      type: object
+      additionalProperties: false
+      required: [covers, inputs]
+      properties:
+        covers:
+          type: array
+          items:
+            $ref: '#/components/schemas/VerschattungCoverState'
+        inputs:
+          $ref: '#/components/schemas/VerschattungInputs'
+
+    VerschattungCoverState:
+      type: object
+      additionalProperties: false
+      required: [id, zone, floor, label, currentPosition, state, expectedPosition]
+      properties:
+        id: { type: string }
+        zone: { type: string, enum: [ost, sued, west] }
+        floor: { type: string, enum: [EG, OG] }
+        label: { type: string }
+        currentPosition: { type: number, nullable: true }
+        state: { type: string, enum: [IDLE, CLOSED_BY_AUTO, OVERRIDE] }
+        expectedPosition: { type: number, nullable: true }
+        lastEvent:
+          type: object
+          nullable: true
+          properties:
+            ts: { type: string }
+            source: { type: string, enum: [auto, user, reset] }
+            fromPosition: { type: number, nullable: true }
+            toPosition: { type: number, nullable: true }
+            reason: { type: string, nullable: true }
+
+    VerschattungInputs:
+      type: object
+      additionalProperties: false
+      required: [sun, pvPowerW, pvThresholdW, indoorTempC, isSummerMode]
+      properties:
+        sun:
+          type: object
+          required: [azimuthDeg, elevationDeg]
+          properties:
+            azimuthDeg: { type: number }
+            elevationDeg: { type: number }
+        pvPowerW: { type: number, nullable: true }
+        pvThresholdW: { type: number }
+        indoorTempC: { type: number, nullable: true }
+        isSummerMode: { type: boolean }
+
+    VerschattungDecision:
+      type: object
+      additionalProperties: false
+      required: [coverId, zone, action, reason, evaluatedConditions, appliedAt, resultingState]
+      properties:
+        coverId: { type: string }
+        zone: { type: string, enum: [ost, sued, west] }
+        action: { type: string, enum: [close, open, skip] }
+        reason: { type: string }
+        evaluatedConditions:
+          type: array
+          items:
+            type: object
+            required: [name, ok, detail]
+            properties:
+              name: { type: string }
+              ok: { type: boolean }
+              detail: { type: string }
+        appliedAt: { type: string }
+        resultingState: { type: string, enum: [IDLE, CLOSED_BY_AUTO, OVERRIDE] }
+        expectedPosition: { type: number, nullable: true }
+
+    VerschattungConfig:
+      type: object
+      additionalProperties: false
+      required: [zones, pvThreshold, indoorTempThresholdC, hysteresisIndoorTempC, hysteresisPvFactor, hysteresisPvDurationMinutes, summerModeMonths]
+      properties:
+        zones:
+          type: object
+          required: [ost, sued, west]
+          properties:
+            ost:  { $ref: '#/components/schemas/VerschattungZoneTunables' }
+            sued: { $ref: '#/components/schemas/VerschattungZoneTunables' }
+            west: { $ref: '#/components/schemas/VerschattungZoneTunables' }
+        pvThreshold:
+          type: object
+          required: [peakWp, factor, floorW]
+          properties:
+            peakWp: { type: number }
+            factor: { type: number }
+            floorW: { type: number }
+        indoorTempThresholdC: { type: number }
+        hysteresisIndoorTempC: { type: number }
+        hysteresisPvFactor: { type: number }
+        hysteresisPvDurationMinutes: { type: number }
+        summerModeMonths:
+          type: array
+          items: { type: integer, minimum: 1, maximum: 12 }
+
+    VerschattungZoneTunables:
+      type: object
+      required: [closePosition]
+      properties:
+        closePosition: { type: number, minimum: 0, maximum: 100 }
