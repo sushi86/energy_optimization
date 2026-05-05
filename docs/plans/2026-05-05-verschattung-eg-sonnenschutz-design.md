@@ -181,9 +181,17 @@ Engine öffnet ein Cover auf 100 %, wenn dieses Cover gerade `CLOSED_BY_AUTO` is
 ### Override-Regel
 
 Cover wechselt von `CLOSED_BY_AUTO` zu `OVERRIDE`, wenn der Cover-Position-Wert
-über Statestream eine Position meldet, die deutlich (>5 % Toleranz) über der
-*expected position* liegt. Das deckt sowohl die App-eigene Slider-Bedienung als
-auch externe Eingriffe (HA-App, physischer Schalter) ab.
+über Statestream eine Position meldet, die in **beide Richtungen** mehr als 5 %
+von der *expected position* abweicht — also sowohl wenn der User höher fährt
+(typischer Override-Fall) als auch wenn er noch weiter zumacht als die Engine
+geplant hatte. Das deckt App-Slider, HA-App, physische Schalter, Sprach-
+assistenten und sonstige externe Eingriffe gleichermaßen ab.
+
+Damit ein Cover überhaupt in OVERRIDE wechseln kann, muss es vorher in
+`CLOSED_BY_AUTO` sein. Der Übergang nach `CLOSED_BY_AUTO` erfolgt erst, *nachdem*
+das Statestream-Echo den Befehl bestätigt hat (siehe Race-Condition-Schutz im
+Engine-Abschnitt). Damit zählt jede *spätere* Position-Abweichung sicher als
+externer Eingriff, nicht als Echo des eigenen Befehls.
 
 `OVERRIDE` löst sich auf, wenn:
 - Sonne verlässt die Zone des Covers, ODER
@@ -213,8 +221,9 @@ Engine wieder.
               └────┬─────────────┘
                    │
    Cover-Position  │
-   > Expected      │
-   (User-Eingriff) │
+   ≠ Expected      │
+   (>5 %, beide    │
+   Richtungen)     │
                    ▼
               ┌──────────────────┐
               │    OVERRIDE      │
