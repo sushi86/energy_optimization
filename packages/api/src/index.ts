@@ -16,6 +16,15 @@ import { PushService } from './push-service.js';
 import { PvTracker } from './pv-tracker.js';
 import { NotificationService } from './notification-service.js';
 import { DailySummaryService } from './daily-summary-service.js';
+import { HaMqttClient } from './infra/ha/ha-mqtt-client.js';
+import { HaMqttListener } from './infra/ha/ha-mqtt-listener.js';
+import { HaMqttPublisher } from './infra/ha/ha-mqtt-publisher.js';
+import { HaCoverActuator } from './verschattung/adapters/ha-cover-actuator.js';
+import { HaTempSource } from './verschattung/adapters/ha-temp-source.js';
+import { VictronPvSource } from './verschattung/adapters/victron-pv-source.js';
+import { Engine as VerschattungEngine } from './verschattung/engine.js';
+import { loadVerschattungConfig } from './verschattung/config.js';
+import { loadPvSettings } from './pv-settings.js';
 
 async function main() {
   const config = loadConfig();
@@ -104,7 +113,57 @@ async function main() {
   const dailySummaryService = new DailySummaryService(resolve(dataDir, 'daily-summary'));
   appState.setPvTracker(pvTracker, gridHistoryService, pvHistoryService);
 
-  const server = buildServer({ appState, inexogyService, gridHistoryService, batteryHistoryService, consumptionHistoryService, socHistoryService, pvHistoryService, nibePoller, wallboxPoller, pushService, dailySummaryService });
+  // --- Verschattung-Modul ---
+  const verschattungConfigPath = resolve(dataDir, 'verschattung-config.json');
+  const verschattungStatePath  = resolve(dataDir, 'verschattung-state.json');
+  const pvSettingsPathV = resolve(dataDir, 'pv-settings.json');
+
+  const haClient = new HaMqttClient({
+    url: config.HA_MQTT_URL,
+    username: config.HA_MQTT_USER,
+    password: config.HA_MQTT_PASSWORD,
+  });
+  await haClient.start();
+  const haListener  = new HaMqttListener(haClient);
+  haListener.start();
+  const haPublisher = new HaMqttPublisher(haClient);
+
+  // Indoor-Temp-Sensor: hardcoded EG-Sensor aus der YAML.
+  const indoorTempEntityId = 'sensor.timmerflotte_temp_hmd_sensor_temperatur_3';
+
+  const haCoverActuator = new HaCoverActuator(haListener, haPublisher);
+  const haTempSource    = new HaTempSource(haListener, indoorTempEntityId);
+  const victronPvSource = new VictronPvSource(appState.mqtt);
+
+  const pvSettingsV = loadPvSettings(pvSettingsPathV);
+  const verschattungEngine = new VerschattungEngine({
+    covers: haCoverActuator,
+    pv: victronPvSource,
+    temp: haTempSource,
+    config: loadVerschattungConfig(verschattungConfigPath),
+    latitude: pvSettingsV.latitude,
+    longitude: pvSettingsV.longitude,
+    stateFilePath: verschattungStatePath,
+  });
+
+  // Tick-Auslöser
+  victronPvSource.observe(() => { void verschattungEngine.tick(); });
+  haTempSource.observe(()    => { void verschattungEngine.tick(); });
+  haCoverActuator.observePosition(() => { void verschattungEngine.tick(); });
+  setInterval(() => { void verschattungEngine.tick(); }, 60_000);
+
+  // Mitternachts-Reset
+  setInterval(() => {
+    const now = new Date();
+    if (now.getHours() === 0 && now.getMinutes() === 1) verschattungEngine.midnightReset();
+  }, 60_000);
+
+  const server = buildServer({
+    appState, inexogyService, gridHistoryService, batteryHistoryService,
+    consumptionHistoryService, socHistoryService, pvHistoryService,
+    nibePoller, wallboxPoller, pushService, dailySummaryService,
+    verschattungEngine, verschattungConfigPath,
+  });
   await server.listen({ port: 3001, host: '0.0.0.0' });
 
   console.log('[energy-control] Server running on http://0.0.0.0:3001');
@@ -112,6 +171,7 @@ async function main() {
   const shutdown = async () => {
     console.log('[energy-control] Shutting down...');
     await server.close();
+    await haClient.stop();
     await appState.stop();
     gridHistoryService.stop();
     batteryHistoryService.stop();

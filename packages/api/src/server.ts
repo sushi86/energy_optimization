@@ -16,6 +16,8 @@ import type { PushService } from './push-service.js';
 import { energyEvents } from './energy-events.js';
 import { getVapidPublicKey } from './vapid.js';
 import type { DailySummaryService } from './daily-summary-service.js';
+import { registerVerschattungRoutes } from './verschattung/routes.js';
+import type { Engine as VerschattungEngine } from './verschattung/engine.js';
 
 export interface ServerOptions {
   testing?: boolean;
@@ -31,6 +33,8 @@ export interface ServerOptions {
   wallboxPoller?: WallboxPoller;
   pushService?: PushService;
   dailySummaryService?: DailySummaryService;
+  verschattungEngine?: VerschattungEngine;
+  verschattungConfigPath?: string;
 }
 
 export interface PriceEntry {
@@ -723,6 +727,13 @@ export function buildServer(options: ServerOptions = {}): FastifyInstance {
     if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) return { summary: null };
     return { summary: dailySummaryService.getSummary(date) };
   });
+
+  if (options.verschattungEngine && options.verschattungConfigPath) {
+    registerVerschattungRoutes(app, {
+      engine: options.verschattungEngine,
+      configPath: options.verschattungConfigPath,
+    });
+  }
 
   // Proxy everything else to Next.js (running on port 3000 internally)
   void app.register(proxy, {
