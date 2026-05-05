@@ -26,6 +26,9 @@ const configSchema = z.object({
   NIBE_USERNAME: z.string().optional(),
   NIBE_PASSWORD: z.string().optional(),
   WALLBOX_URL: z.string().optional(),
+  HA_MQTT_URL: z.string().default('mqtt://homeassistant.local:1883'),
+  HA_MQTT_USER: z.string().optional(),
+  HA_MQTT_PASSWORD: z.string().optional(),
 });
 
 export type Config = z.infer<typeof configSchema>;
