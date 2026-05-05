@@ -32,6 +32,9 @@ importers:
       mqtt:
         specifier: ^5.10.0
         version: 5.15.0
+      suncalc:
+        specifier: ^1.9.0
+        version: 1.9.0
       web-push:
         specifier: ^3.6.7
         version: 3.6.7
@@ -45,6 +48,9 @@ importers:
       '@types/node':
         specifier: ^22.0.0
         version: 22.19.15
+      '@types/suncalc':
+        specifier: ^1.9.2
+        version: 1.9.2
       '@types/web-push':
         specifier: ^3.6.4
         version: 3.6.4
@@ -803,6 +809,9 @@ packages:
 
   '@types/readable-stream@4.0.23':
     resolution: {integrity: sha512-wwXrtQvbMHxCbBgjHaMGEmImFTQxxpfMOR/ZoQnXxB1woqkUbdLGFDgauo00Py9IudiaqSeiBiulSV9i6XIPig==}
+
+  '@types/suncalc@1.9.2':
+    resolution: {integrity: sha512-ATAGBHHfA1TlE2tjfidLyTcysjoT2JHHEAmWRULh73SU9UTn++j5fqHEW16X6Y/2Li87jEQXzgu4R/OOdlDqzw==}
 
   '@types/web-push@3.6.4':
     resolution: {integrity: sha512-GnJmSr40H3RAnj0s34FNTcJi1hmWFV5KXugE0mYWnYhgTAHLJ/dJKAwDmvPJYMke0RplY2XE9LnM4hqSqKIjhQ==}
@@ -1579,6 +1588,9 @@ packages:
       babel-plugin-macros:
         optional: true
 
+  suncalc@1.9.0:
+    resolution: {integrity: sha512-vMJ8Byp1uIPoj+wb9c1AdK4jpkSKVAywgHX0lqY7zt6+EWRRC3Z+0Ucfjy/0yxTVO1hwwchZe4uoFNqrIC24+A==}
+
   supports-color@10.2.2:
     resolution: {integrity: sha512-SS+jx45GF1QjgEXQx4NJZV9ImqmO2NPz5FNsIHrsDjh2YsHnawpan7SNQ1o8NuhrbHZy9AZhIoCUiCeaW/C80g==}
     engines: {node: '>=18'}
@@ -2309,6 +2321,8 @@ snapshots:
   '@types/readable-stream@4.0.23':
     dependencies:
       '@types/node': 22.19.15
+
+  '@types/suncalc@1.9.2': {}
 
   '@types/web-push@3.6.4':
     dependencies:
@@ -3168,6 +3182,8 @@ snapshots:
     dependencies:
       client-only: 0.0.1
       react: 19.2.4
+
+  suncalc@1.9.0: {}
 
   supports-color@10.2.2: {}
 
