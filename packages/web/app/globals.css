@@ -9,10 +9,22 @@
   --text-primary: #e5e5e5;
   --text-secondary: #a3a3a3;
   --border: #262626;
+  /* Reserved space for global navigation. Adjusted per breakpoint below. */
+  --nav-pt: 0px;
+  --nav-pb: calc(64px + env(safe-area-inset-bottom));
+}
+
+@media (min-width: 768px) {
+  :root {
+    --nav-pt: 3.5rem;
+    --nav-pb: 0px;
+  }
 }
 
 body {
   background-color: var(--bg-primary);
   color: var(--text-primary);
   font-family: system-ui, -apple-system, sans-serif;
+  padding-bottom: var(--nav-pb);
+  padding-top: var(--nav-pt);
 }

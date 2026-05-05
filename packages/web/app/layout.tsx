@@ -1,6 +1,7 @@
 import type { Metadata, Viewport } from 'next';
 import './globals.css';
 import { ServiceWorkerRegister } from '../components/sw-register';
+import { NavBar } from '../components/nav-bar';
 
 export const viewport: Viewport = {
   width: 'device-width',
@@ -28,6 +29,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
     <html lang="de" className="dark">
       <body className="min-h-screen antialiased">
         <ServiceWorkerRegister />
+        <NavBar />
         {children}
       </body>
     </html>
