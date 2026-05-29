@@ -265,6 +265,15 @@ export interface components {
         VerschattungStateResponse: {
             covers: components["schemas"]["VerschattungCoverState"][];
             inputs: components["schemas"]["VerschattungInputs"];
+            rooms: components["schemas"]["VerschattungRoom"][];
+        };
+        VerschattungRoom: {
+            id: string;
+            /** @enum {string} */
+            floor: "EG" | "OG";
+            label: string;
+            tempC: number | null;
+            humidity: number | null;
         };
         VerschattungCoverState: {
             id: string;

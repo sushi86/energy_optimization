@@ -24,6 +24,7 @@ import { HaTempSource } from './verschattung/adapters/ha-temp-source.js';
 import { VictronPvSource } from './verschattung/adapters/victron-pv-source.js';
 import { Engine as VerschattungEngine } from './verschattung/engine.js';
 import { loadVerschattungConfig } from './verschattung/config.js';
+import { RoomSensorRegistry } from './verschattung/room-sensors.js';
 import { loadPvSettings } from './pv-settings.js';
 
 async function main() {
@@ -123,7 +124,7 @@ async function main() {
     username: config.HA_MQTT_USER,
     password: config.HA_MQTT_PASSWORD,
   });
-  await haClient.start();
+  void haClient.start();
   const haListener  = new HaMqttListener(haClient);
   haListener.start();
   const haPublisher = new HaMqttPublisher(haClient);
@@ -134,6 +135,7 @@ async function main() {
   const haCoverActuator = new HaCoverActuator(haListener, haPublisher);
   const haTempSource    = new HaTempSource(haListener, indoorTempEntityId);
   const victronPvSource = new VictronPvSource(appState.mqtt);
+  const roomSensors     = new RoomSensorRegistry(haListener);
 
   const pvSettingsV = loadPvSettings(pvSettingsPathV);
   const verschattungEngine = new VerschattungEngine({
@@ -163,6 +165,7 @@ async function main() {
     consumptionHistoryService, socHistoryService, pvHistoryService,
     nibePoller, wallboxPoller, pushService, dailySummaryService,
     verschattungEngine, verschattungConfigPath,
+    roomSensors,
   });
   await server.listen({ port: 3001, host: '0.0.0.0' });
 

@@ -337,7 +337,7 @@ components:
     VerschattungStateResponse:
       type: object
       additionalProperties: false
-      required: [covers, inputs]
+      required: [covers, inputs, rooms]
       properties:
         covers:
           type: array
@@ -345,6 +345,21 @@ components:
             $ref: '#/components/schemas/VerschattungCoverState'
         inputs:
           $ref: '#/components/schemas/VerschattungInputs'
+        rooms:
+          type: array
+          items:
+            $ref: '#/components/schemas/VerschattungRoom'
+
+    VerschattungRoom:
+      type: object
+      additionalProperties: false
+      required: [id, floor, label, tempC, humidity]
+      properties:
+        id: { type: string }
+        floor: { type: string, enum: [EG, OG] }
+        label: { type: string }
+        tempC: { type: number, nullable: true }
+        humidity: { type: number, nullable: true }
 
     VerschattungCoverState:
       type: object

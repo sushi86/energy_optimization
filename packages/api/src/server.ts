@@ -18,6 +18,7 @@ import { getVapidPublicKey } from './vapid.js';
 import type { DailySummaryService } from './daily-summary-service.js';
 import { registerVerschattungRoutes } from './verschattung/routes.js';
 import type { Engine as VerschattungEngine } from './verschattung/engine.js';
+import type { RoomSensorRegistry } from './verschattung/room-sensors.js';
 
 export interface ServerOptions {
   testing?: boolean;
@@ -35,6 +36,7 @@ export interface ServerOptions {
   dailySummaryService?: DailySummaryService;
   verschattungEngine?: VerschattungEngine;
   verschattungConfigPath?: string;
+  roomSensors?: RoomSensorRegistry;
 }
 
 export interface PriceEntry {
@@ -111,7 +113,7 @@ let lastPriceError: string | null = null;
 export function getLastPriceError(): string | null { return lastPriceError; }
 export function setLastPriceError(err: string | null): void { lastPriceError = err; }
 
-function buildVerschattungSnapshot(engine: VerschattungEngine) {
+function buildVerschattungSnapshot(engine: VerschattungEngine, roomSensors?: RoomSensorRegistry) {
   const ctx = engine.buildContext();
   const tracker = engine.trackerSnapshot();
   return {
@@ -123,6 +125,7 @@ function buildVerschattungSnapshot(engine: VerschattungEngine) {
       sun: ctx.sun, pvPowerW: ctx.pvPowerW, pvThresholdW: ctx.pvThresholdW,
       indoorTempC: ctx.indoorTempC, isSummerMode: ctx.isSummerMode,
     },
+    rooms: roomSensors?.snapshot() ?? [],
     recentDecisions: engine.recentDecisions().slice(0, 20),
   };
 }
@@ -233,7 +236,7 @@ export function buildServer(options: ServerOptions = {}): FastifyInstance {
         wallboxPowerW: wallboxPoller?.getPowerW() ?? null,
         timestamp: s.timestamp.toISOString(),
         verschattung: options.verschattungEngine ? {
-          state: buildVerschattungSnapshot(options.verschattungEngine),
+          state: buildVerschattungSnapshot(options.verschattungEngine, options.roomSensors),
         } : null,
       });
 
@@ -753,6 +756,7 @@ export function buildServer(options: ServerOptions = {}): FastifyInstance {
     registerVerschattungRoutes(app, {
       engine: options.verschattungEngine,
       configPath: options.verschattungConfigPath,
+      roomSensors: options.roomSensors,
     });
   }
 

@@ -2,16 +2,18 @@ import type { FastifyInstance } from 'fastify';
 import type { Engine } from './engine.js';
 import { COVERS } from './covers.js';
 import { loadVerschattungConfig, saveVerschattungConfig, type VerschattungConfig } from './config.js';
+import type { RoomSensorRegistry } from './room-sensors.js';
 
 export interface VerschattungRouteOptions {
   engine: Engine;
   configPath: string;
+  roomSensors?: RoomSensorRegistry;
 }
 
 export function registerVerschattungRoutes(app: FastifyInstance, opts: VerschattungRouteOptions): void {
-  const { engine, configPath } = opts;
+  const { engine, configPath, roomSensors } = opts;
 
-  app.get('/api/verschattung/state', async () => buildStateResponse(engine));
+  app.get('/api/verschattung/state', async () => buildStateResponse(engine, roomSensors));
   app.get('/api/verschattung/decisions', async () => engine.recentDecisions());
   app.get('/api/verschattung/config', async () => loadVerschattungConfig(configPath));
 
@@ -35,7 +37,7 @@ export function registerVerschattungRoutes(app: FastifyInstance, opts: Verschatt
   });
 }
 
-function buildStateResponse(engine: Engine) {
+function buildStateResponse(engine: Engine, roomSensors?: RoomSensorRegistry) {
   const ctx = engine.buildContext();
   const tracker = engine.trackerSnapshot();
   return {
@@ -55,5 +57,6 @@ function buildStateResponse(engine: Engine) {
       indoorTempC: ctx.indoorTempC,
       isSummerMode: ctx.isSummerMode,
     },
+    rooms: roomSensors?.snapshot() ?? [],
   };
 }

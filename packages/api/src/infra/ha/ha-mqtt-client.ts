@@ -16,6 +16,17 @@ export class HaMqttClient {
 
   start(): Promise<void> {
     return new Promise((resolve) => {
+      let settled = false;
+      const settle = (reason: string) => {
+        if (settled) return;
+        settled = true;
+        if (reason !== 'connect') console.warn(`[ha-mqtt] start() resolved via ${reason} — continuing boot, reconnect in background`);
+        resolve();
+      };
+
+      // Hard fallback: never block server boot for more than 15s on HA MQTT.
+      const timeout = setTimeout(() => settle('timeout'), 15_000);
+
       this.client = mqtt.connect(this.options.url, {
         clientId: this.options.clientId ?? `energy-control-ha-${Date.now()}`,
         username: this.options.username,
@@ -26,14 +37,16 @@ export class HaMqttClient {
       });
 
       this.client.on('connect', () => {
+        clearTimeout(timeout);
         for (const cb of this.connectedListeners) cb();
-        resolve();
+        settle('connect');
       });
       this.client.on('message', (topic, payload) => {
         for (const cb of this.messageListeners) cb(topic, payload);
       });
       this.client.on('error', (err) => {
         console.error('[ha-mqtt] error:', err.message);
+        settle('error');
       });
     });
   }
