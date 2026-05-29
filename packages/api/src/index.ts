@@ -45,6 +45,7 @@ async function main() {
     consumptionDayW: 500,
     consumptionNightW: 350,
     multiplusRatedPowerW: 4000,
+    manualModeFloorPercent: config.MANUAL_MODE_FLOOR_PERCENT,
   });
 
   await Promise.all([appState.vrm.refreshForecast(), appState.vrm.refreshActualYield()]);

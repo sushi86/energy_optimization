@@ -19,6 +19,7 @@ const configSchema = z.object({
   PREFERRED_MAX_CHARGE_W: z.coerce.number().default(5000),
   ACTIVE_MORNING_DISCHARGE: z.coerce.boolean().default(false),
   ACTIVE_MORNING_DISCHARGE_MIN_SOC_PERCENT: z.coerce.number().default(5),
+  MANUAL_MODE_FLOOR_PERCENT: z.coerce.number().default(50),
   INEXOGY_EMAIL: z.string().optional(),
   INEXOGY_PASSWORD: z.string().optional(),
   INEXOGY_METER_ID: z.string().optional(),

@@ -34,6 +34,7 @@ export interface AppStateOptions {
   consumptionDayW: number;
   consumptionNightW: number;
   multiplusRatedPowerW: number;
+  manualModeFloorPercent: number;
   /** Optional override for the data directory (used by tests for isolation) */
   dataDir?: string;
 }
@@ -316,6 +317,7 @@ export class AppState {
       consumptionDayW: this.config.consumptionDayW,
       consumptionNightW: this.config.consumptionNightW,
       multiplusRatedPowerW: this.config.multiplusRatedPowerW,
+      manualModeFloorPercent: this.config.manualModeFloorPercent,
     };
     try {
       const dir = dirname(this.configOverridesPath);
