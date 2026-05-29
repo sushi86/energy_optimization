@@ -14,6 +14,7 @@ import { WallboxPoller } from './wallbox-poller.js';
 import { initVapid } from './vapid.js';
 import { PushService } from './push-service.js';
 import { PvTracker } from './pv-tracker.js';
+import { ManualModeTracker } from './manual-mode-tracker.js';
 import { NotificationService } from './notification-service.js';
 import { DailySummaryService } from './daily-summary-service.js';
 
@@ -45,6 +46,7 @@ async function main() {
     consumptionDayW: 500,
     consumptionNightW: 350,
     multiplusRatedPowerW: 4000,
+    manualModeFloorPercent: config.MANUAL_MODE_FLOOR_PERCENT,
   });
 
   await Promise.all([appState.vrm.refreshForecast(), appState.vrm.refreshActualYield()]);
@@ -100,9 +102,11 @@ async function main() {
   initVapid(dataDir);
   const pushService = new PushService(dataDir);
   const pvTracker = new PvTracker();
+  const manualModeTracker = new ManualModeTracker();
   new NotificationService(pushService);
   const dailySummaryService = new DailySummaryService(resolve(dataDir, 'daily-summary'));
   appState.setPvTracker(pvTracker, gridHistoryService, pvHistoryService);
+  appState.setManualModeTracker(manualModeTracker);
 
   const server = buildServer({ appState, inexogyService, gridHistoryService, batteryHistoryService, consumptionHistoryService, socHistoryService, pvHistoryService, nibePoller, wallboxPoller, pushService, dailySummaryService });
   await server.listen({ port: 3001, host: '0.0.0.0' });

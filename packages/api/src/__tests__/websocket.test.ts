@@ -57,6 +57,7 @@ describe('WebSocket', () => {
       consumptionDayW: 500,
       consumptionNightW: 350,
       multiplusRatedPowerW: 4000,
+      manualModeFloorPercent: 50,
       dataDir: tmpDir,
     });
     app = buildServer({ testing: true, appState, pvSettingsPath: join(tmpDir, 'pv-settings.json') });

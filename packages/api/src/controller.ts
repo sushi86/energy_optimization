@@ -1,6 +1,7 @@
 import type { SystemState } from './mqtt-service.js';
 import type { Forecast } from './vrm-service.js';
 import type { ChargePlan, ChargePlanSlot } from './charge-plan.js';
+import { energyEvents } from './energy-events.js';
 
 /** Format watts for display: ≥1000 → "10.7 kW", else "950 W" */
 function fmtW(w: number): string {
@@ -86,6 +87,9 @@ export class Controller {
   setMode(mode: ControllerMode): void {
     if (this.mode !== mode) {
       console.log(`[controller] Mode changed: ${this.mode} → ${mode}`);
+      if (mode === 'manual') {
+        energyEvents.emit('controller:switched-to-manual', { trigger: 'api', setpointW: null });
+      }
     }
     this.mode = mode;
   }
@@ -101,6 +105,7 @@ export class Controller {
   handleExternalSetpointChange(valueW: number): void {
     if (this.mode !== 'manual') {
       console.log(`[controller] External setpoint change detected (${fmtW(valueW)}) — switching from ${this.mode} to manual`);
+      energyEvents.emit('controller:switched-to-manual', { trigger: 'external', setpointW: valueW });
     }
     this.mode = 'manual';
     this.lastAppliedSetpoint = valueW;

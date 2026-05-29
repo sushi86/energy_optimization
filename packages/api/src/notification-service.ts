@@ -1,4 +1,4 @@
-import { energyEvents, type MorningBriefingEvent, type ProductionEndedEvent, type TemperatureHighEvent } from './energy-events.js';
+import { energyEvents, type MorningBriefingEvent, type ProductionEndedEvent, type TemperatureHighEvent, type SwitchedToManualEvent, type ManualDischargeEvent, type AutoRestoredEvent } from './energy-events.js';
 import type { PushService } from './push-service.js';
 
 function formatKwh(kwh: number): string {
@@ -10,6 +10,9 @@ export class NotificationService {
     energyEvents.on('pv:morning-briefing', (event) => this.handleMorningBriefing(event));
     energyEvents.on('pv:production-ended', (event) => this.handleProductionEnded(event));
     energyEvents.on('mppt:temperature-high', (event) => this.handleTemperatureHigh(event));
+    energyEvents.on('controller:switched-to-manual', (event) => this.handleSwitchedToManual(event));
+    energyEvents.on('controller:manual-discharge', (event) => this.handleManualDischarge(event));
+    energyEvents.on('controller:auto-restored', (event) => this.handleAutoRestored(event));
     console.log('[notifications] Service started');
   }
 
@@ -43,6 +46,37 @@ export class NotificationService {
       body: `🌡️ MPPT Laderegler bei ${event.temperatureC.toFixed(1)} °C`,
       url: '/',
       tag: 'temperature-high',
+    });
+  }
+
+  private handleSwitchedToManual(event: SwitchedToManualEvent): void {
+    const body = event.trigger === 'external'
+      ? `⚠️ Auf Manuell gewechselt — externer Setpoint (${event.setpointW ?? '?'} W)`
+      : `⚠️ Auf Manuell gewechselt — über die Web-Oberfläche`;
+
+    void this.pushService.sendNotification({
+      title: 'Manueller Modus',
+      body,
+      url: '/',
+      tag: 'mode-manual',
+    });
+  }
+
+  private handleManualDischarge(event: ManualDischargeEvent): void {
+    void this.pushService.sendNotification({
+      title: 'Manueller Modus',
+      body: `🔋 Manueller Modus entlädt den Akku — SOC ${event.batterySoc.toFixed(0)} %, ${Math.abs(event.batteryPowerW).toFixed(0)} W`,
+      url: '/',
+      tag: 'manual-discharge',
+    });
+  }
+
+  private handleAutoRestored(event: AutoRestoredEvent): void {
+    void this.pushService.sendNotification({
+      title: 'Zurück auf Automatik',
+      body: `✅ Zurück auf Automatik — Akku bei ${event.batterySoc.toFixed(0)} % (Manuell-Schutz)`,
+      url: '/',
+      tag: 'auto-restored',
     });
   }
 }

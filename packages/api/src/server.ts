@@ -306,6 +306,7 @@ export function buildServer(options: ServerOptions = {}): FastifyInstance {
       forecastCorrectionOverride: c.forecastCorrectionOverride,
       activeMorningDischarge: c.activeMorningDischarge,
       activeMorningDischargeMinSocPercent: c.activeMorningDischargeMinSocPercent,
+      manualModeFloorPercent: c.manualModeFloorPercent,
     };
   });
 
@@ -328,6 +329,7 @@ export function buildServer(options: ServerOptions = {}): FastifyInstance {
       forecastCorrectionOverride: updated.forecastCorrectionOverride,
       activeMorningDischarge: updated.activeMorningDischarge,
       activeMorningDischargeMinSocPercent: updated.activeMorningDischargeMinSocPercent,
+      manualModeFloorPercent: updated.manualModeFloorPercent,
     };
   });
 
