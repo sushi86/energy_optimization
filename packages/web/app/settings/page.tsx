@@ -401,6 +401,32 @@ export default function SettingsPage() {
         </div>
       </div>
 
+      {/* Manual-Mode Auto-Restore */}
+      <div className="rounded-xl border border-[var(--border)] bg-[var(--bg-card)] p-5 mb-6">
+        <div className="flex items-center justify-between">
+          <div>
+            <p className="text-sm font-medium text-[var(--text-primary)]">Manuell-Modus Auto-Rückwechsel</p>
+            <p className="text-xs text-[var(--text-secondary)] mt-1">
+              Entlädt der Manuell-Modus den Akku bis auf diesen SOC, wird automatisch auf Automatik zurückgeschaltet.
+            </p>
+          </div>
+          <div className="flex items-center gap-2">
+            <input
+              type="number"
+              min={0}
+              max={100}
+              step={1}
+              value={Number(config?.manualModeFloorPercent ?? 50)}
+              onChange={(e) => updateConfigField('manualModeFloorPercent', e.target.value)}
+              onBlur={(e) => flushConfigField('manualModeFloorPercent', e.target.value)}
+              className="w-20 rounded-lg border border-[var(--border)] bg-[var(--bg-primary)] px-3 py-2 text-sm text-[var(--text-primary)] text-right focus:outline-none focus:border-[var(--accent)]"
+            />
+            <span className="text-sm text-[var(--text-secondary)]">%</span>
+            <SavedTick visible={!!savedFlash.manualModeFloorPercent} />
+          </div>
+        </div>
+      </div>
+
       {/* Preferred Max Charge Power */}
       <div className="rounded-xl border border-[var(--border)] bg-[var(--bg-card)] p-5 mb-6">
         <div className="flex items-center justify-between">
@@ -577,7 +603,7 @@ export default function SettingsPage() {
           <p className="text-sm text-[var(--text-secondary)] mb-4">Konfiguration</p>
           <div className="space-y-3">
             {Object.entries(config).map(([key, value]) => {
-              if (typeof value === 'object' || typeof value === 'boolean' || key === 'feedInRateCentPerKwh' || key === 'preferredMaxChargeW' || key === 'consumptionDayW' || key === 'consumptionNightW' || key === 'multiplusRatedPowerW' || key === 'activeMorningDischargeMinSocPercent') return null;
+              if (typeof value === 'object' || typeof value === 'boolean' || key === 'feedInRateCentPerKwh' || key === 'preferredMaxChargeW' || key === 'consumptionDayW' || key === 'consumptionNightW' || key === 'multiplusRatedPowerW' || key === 'activeMorningDischargeMinSocPercent' || key === 'manualModeFloorPercent') return null;
               return (
                 <div key={key} className="flex flex-col sm:flex-row sm:items-center gap-1 sm:gap-4">
                   <label className="text-sm text-[var(--text-secondary)] sm:w-48 shrink-0">
