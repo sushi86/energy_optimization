@@ -23,10 +23,27 @@ export interface TemperatureHighEvent {
   temperatureC: number;
 }
 
+export interface SwitchedToManualEvent {
+  trigger: 'external' | 'api';
+  setpointW: number | null;
+}
+
+export interface ManualDischargeEvent {
+  batterySoc: number;
+  batteryPowerW: number;
+}
+
+export interface AutoRestoredEvent {
+  batterySoc: number;
+}
+
 interface EnergyEventMap {
   'pv:morning-briefing': [MorningBriefingEvent];
   'pv:production-ended': [ProductionEndedEvent];
   'mppt:temperature-high': [TemperatureHighEvent];
+  'controller:switched-to-manual': [SwitchedToManualEvent];
+  'controller:manual-discharge': [ManualDischargeEvent];
+  'controller:auto-restored': [AutoRestoredEvent];
 }
 
 class EnergyEventEmitter extends EventEmitter {
