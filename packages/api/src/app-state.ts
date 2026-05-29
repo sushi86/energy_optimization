@@ -9,6 +9,7 @@ import { resolve, dirname } from 'path';
 import { fileURLToPath } from 'url';
 import fs from 'node:fs';
 import type { PvTracker } from './pv-tracker.js';
+import type { ManualModeTracker } from './manual-mode-tracker.js';
 import type { GridHistoryService } from './grid-history-service.js';
 
 export interface AppStateOptions {
@@ -54,6 +55,7 @@ export class AppState {
   /** Samples of raw correction factors within each 15-min slot for averaging */
   private correctionSamples: Array<{ slotMs: number; factor: number }> = [];
   private pvTracker: PvTracker | null = null;
+  private manualModeTracker: ManualModeTracker | null = null;
   private gridHistoryForTracker: GridHistoryService | null = null;
   private pvHistoryForTracker: GridHistoryService | null = null;
 
@@ -231,6 +233,16 @@ export class AppState {
       }
     }
 
+    if (this.manualModeTracker) {
+      this.manualModeTracker.check({
+        mode: result.mode,
+        batterySoc: systemState.batterySoc,
+        batteryPowerW: systemState.batteryPower,
+        manualModeFloorPercent: this.config.manualModeFloorPercent,
+        switchToAuto: () => this.controller.setMode('auto'),
+      });
+    }
+
     if (result.mode === 'manual') return;
 
     const prev = this.controller.getLastResult();
@@ -252,6 +264,10 @@ export class AppState {
     this.pvTracker = tracker;
     this.gridHistoryForTracker = gridHistory;
     this.pvHistoryForTracker = pvHistory ?? null;
+  }
+
+  setManualModeTracker(tracker: ManualModeTracker): void {
+    this.manualModeTracker = tracker;
   }
 
   getConfig(): AppStateOptions {
