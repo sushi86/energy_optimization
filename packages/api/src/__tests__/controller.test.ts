@@ -3,6 +3,7 @@ import { Controller, type ControllerDeps } from '../controller.js';
 import type { SystemState } from '../mqtt-service.js';
 import type { Forecast } from '../vrm-service.js';
 import type { ChargePlan } from '../charge-plan.js';
+import { energyEvents } from '../energy-events.js';
 
 function makeState(overrides: Partial<SystemState> = {}): SystemState {
   return {
@@ -882,5 +883,48 @@ describe('Controller', () => {
       expect(result.details).not.toBeNull();
       expect(result.details!.strategy).not.toContain('Ladeplan');
     });
+  });
+});
+
+describe('manual mode switch notifications', () => {
+  it('emits switched-to-manual with external trigger on external setpoint change', () => {
+    const c = makeController();
+    const calls: Array<{ trigger: string; setpointW: number | null }> = [];
+    const listener = (e: { trigger: string; setpointW: number | null }) => calls.push(e);
+    energyEvents.on('controller:switched-to-manual', listener);
+    c.handleExternalSetpointChange(-3000);
+    energyEvents.off('controller:switched-to-manual', listener);
+    expect(calls).toEqual([{ trigger: 'external', setpointW: -3000 }]);
+  });
+
+  it('does not re-emit when an external change arrives while already manual', () => {
+    const c = makeController();
+    c.handleExternalSetpointChange(-3000);
+    const calls: unknown[] = [];
+    const listener = (e: unknown) => calls.push(e);
+    energyEvents.on('controller:switched-to-manual', listener);
+    c.handleExternalSetpointChange(-2000);
+    energyEvents.off('controller:switched-to-manual', listener);
+    expect(calls).toHaveLength(0);
+  });
+
+  it('emits switched-to-manual with api trigger on setMode("manual")', () => {
+    const c = makeController();
+    const calls: Array<{ trigger: string; setpointW: number | null }> = [];
+    const listener = (e: { trigger: string; setpointW: number | null }) => calls.push(e);
+    energyEvents.on('controller:switched-to-manual', listener);
+    c.setMode('manual');
+    energyEvents.off('controller:switched-to-manual', listener);
+    expect(calls).toEqual([{ trigger: 'api', setpointW: null }]);
+  });
+
+  it('does not emit when setMode is called with a non-manual mode', () => {
+    const c = makeController();
+    const calls: unknown[] = [];
+    const listener = (e: unknown) => calls.push(e);
+    energyEvents.on('controller:switched-to-manual', listener);
+    c.setMode('winter');
+    energyEvents.off('controller:switched-to-manual', listener);
+    expect(calls).toHaveLength(0);
   });
 });
