@@ -67,4 +67,20 @@ describe('loadConfig', () => {
     expect(config.WALLBOX_UNIT_ID).toBe(255);
     expect(config.WALLBOX_POLL_INTERVAL_MS).toBe(5000);
   });
+
+  it('loads WALLBOX_PV_TOLERANCE_MINUTES with default value', () => {
+    process.env.VICTRON_VRM_TOKEN = 'test-token';
+    process.env.VICTRON_VRM_SITE_ID = 'test-site';
+    delete process.env.WALLBOX_PV_TOLERANCE_MINUTES;
+    const config = loadConfig();
+    expect(config.WALLBOX_PV_TOLERANCE_MINUTES).toBe(2);
+  });
+
+  it('overrides WALLBOX_PV_TOLERANCE_MINUTES from env', () => {
+    process.env.VICTRON_VRM_TOKEN = 'test-token';
+    process.env.VICTRON_VRM_SITE_ID = 'test-site';
+    process.env.WALLBOX_PV_TOLERANCE_MINUTES = '5';
+    const config = loadConfig();
+    expect(config.WALLBOX_PV_TOLERANCE_MINUTES).toBe(5);
+  });
 });

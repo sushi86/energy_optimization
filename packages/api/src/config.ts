@@ -30,6 +30,7 @@ const configSchema = z.object({
   WALLBOX_PORT: z.coerce.number().default(502),
   WALLBOX_UNIT_ID: z.coerce.number().default(255),
   WALLBOX_POLL_INTERVAL_MS: z.coerce.number().default(5000),
+  WALLBOX_PV_TOLERANCE_MINUTES: z.coerce.number().default(2),
 });
 
 export type Config = z.infer<typeof configSchema>;
