@@ -10,7 +10,7 @@ import { buildServer } from './server.js';
 import { InexogyService } from './inexogy-service.js';
 import { GridHistoryService } from './grid-history-service.js';
 import { NibePoller } from './nibe-poller.js';
-import { createWallboxClient } from './wallbox/WallboxClient.js';
+import { createWallboxClient, type WallboxClient } from './wallbox/WallboxClient.js';
 import { initVapid } from './vapid.js';
 import { PushService } from './push-service.js';
 import { PvTracker } from './pv-tracker.js';
@@ -91,16 +91,21 @@ async function main() {
     console.log('[energy-control] nibe heat pump poller enabled');
   }
 
-  let wallboxClient: import('./wallbox/WallboxClient.js').WallboxClient | undefined;
+  let wallboxClient: WallboxClient | undefined;
   if (config.WALLBOX_HOST) {
-    wallboxClient = createWallboxClient({
+    const client = createWallboxClient({
       host: config.WALLBOX_HOST,
       port: config.WALLBOX_PORT,
       unitId: config.WALLBOX_UNIT_ID,
     });
-    await wallboxClient.connect();
-    wallboxClient.startPolling(config.WALLBOX_POLL_INTERVAL_MS, () => {});
-    console.log('[energy-control] EM2GO wallbox (Modbus) enabled');
+    try {
+      await client.connect();
+      client.startPolling(config.WALLBOX_POLL_INTERVAL_MS, () => {});
+      wallboxClient = client;
+      console.log('[energy-control] EM2GO wallbox (Modbus) enabled');
+    } catch (err) {
+      console.error('[energy-control] EM2GO wallbox connection failed, continuing without it:', (err as Error).message);
+    }
   }
 
   // --- Push notifications ---
