@@ -207,6 +207,24 @@ describe('WallboxController', () => {
       await ctrl.tick({ pvPower: 1000, consumptionPower: 500 }, state, client, t0 + TOLERANCE_MS + 1);
       expect(client.stopCharging).not.toHaveBeenCalled();
     });
+
+    it('adds back the wallbox\'s own draw so its charging load (already counted inside consumptionPower) does not self-defeat the surplus calc', async () => {
+      const ctrl = new WallboxController({ toleranceMs: TOLERANCE_MS });
+      ctrl.setMode('pv');
+      const client = makeClient();
+      // House load 500W + wallbox draw 4830W (7A * 3 * 230V) = consumptionPower 5330W.
+      // Naive surplus = 5500 - 5330 = 170W → looks insufficient, would trigger a stop.
+      // Corrected surplus = 170 + 4830 = 5000W → sufficient, should keep charging at 7A.
+      const state = makeState({ status: 'charging', chargingCurrentA: 7, powerW: 4830 });
+      await ctrl.tick({ pvPower: 5500, consumptionPower: 5330 }, state, client, 1_000_000);
+      expect(client.stopCharging).not.toHaveBeenCalled();
+      expect(client.setChargingCurrent).not.toHaveBeenCalled(); // target 7A already matches current 7A
+      expect(ctrl.getLastDetails()).toEqual({
+        surplusW: 5000,
+        targetCurrentA: 7,
+        reason: 'Lädt mit 7 A (Überschuss 5000 W)',
+      });
+    });
   });
 
   describe('getLastDetails', () => {

@@ -84,11 +84,15 @@ export class WallboxController {
       }
 
       // mode === 'pv'
-      const surplusW = systemState.pvPower - systemState.consumptionPower;
       if (!wallboxState) {
+        const surplusW = systemState.pvPower - systemState.consumptionPower;
         this.lastDetails = { surplusW: Math.round(surplusW), targetCurrentA: null, reason: 'Warte auf Wallbox-Daten' };
         return;
       }
+
+      // consumptionPower already includes the wallbox's own draw (same AC circuit), so add
+      // it back — otherwise charging collapses its own computed surplus (self-defeating loop).
+      const surplusW = systemState.pvPower - systemState.consumptionPower + wallboxState.powerW;
 
       const isCharging = wallboxState.status === 'charging';
 
