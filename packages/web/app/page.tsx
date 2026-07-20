@@ -4,6 +4,7 @@ import { useEffect, useState, useRef, useCallback, useMemo } from 'react';
 import Link from 'next/link';
 import { useWebSocket, type SystemStatus, type ControllerDetails, type ChargePlan, type ChargePlanSlot } from '../hooks/use-websocket';
 import WallboxCard from '../components/WallboxCard';
+import WallboxControlCard from '../components/WallboxControlCard';
 import { berechneStrompreis, getTarifstufe } from './strompreis';
 import { Heater, EvCharger } from 'lucide-react';
 
@@ -1139,6 +1140,7 @@ export default function Dashboard() {
   const [hoveredSlot, setHoveredSlot] = useState<number | null>(null);
   const [csvCopied, setCsvCopied] = useState(false);
   const [multiplusHover, setMultiplusHover] = useState<'L1' | 'L2' | 'L3' | null>(null);
+  const [wallboxMode, setWallboxMode] = useState<'off' | 'pv' | 'manual'>('off');
 
   // Sync mode from server status
   const serverMode = status?.controller?.mode ?? 'auto';
@@ -1511,7 +1513,8 @@ export default function Dashboard() {
         </div>
       </div>
 
-      <WallboxCard />
+      <WallboxControlCard onModeChange={setWallboxMode} />
+      {wallboxMode === 'manual' && <WallboxCard />}
 
       {/* Row 2: Grid + Battery */}
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 mb-8">

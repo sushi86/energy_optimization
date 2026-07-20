@@ -1,0 +1,115 @@
+'use client';
+
+import { useEffect, useState, useCallback } from 'react';
+import { EvCharger } from 'lucide-react';
+
+type WallboxMode = 'off' | 'pv' | 'manual';
+
+interface WallboxStatusResponse {
+  connected: boolean;
+  vehicleConnected: boolean;
+  mode: WallboxMode;
+}
+
+const modeLabels: Record<WallboxMode, string> = {
+  off: 'Aus',
+  pv: 'PV',
+  manual: 'Manuell',
+};
+
+const modeColors: Record<WallboxMode, string> = {
+  off: 'bg-red-500/20 text-red-400 border-red-500/30',
+  pv: 'bg-[#10EFD8]/20 text-[#10EFD8] border-[#10EFD8]/30',
+  manual: 'bg-yellow-500/20 text-yellow-400 border-yellow-500/30',
+};
+
+export default function WallboxControlCard({ onModeChange }: { onModeChange?: (mode: WallboxMode) => void }) {
+  const [status, setStatus] = useState<WallboxStatusResponse | null>(null);
+  const [error, setError] = useState<string | null>(null);
+
+  const refresh = useCallback(async () => {
+    try {
+      const res = await fetch('/api/wallbox/status');
+      if (!res.ok) {
+        setError((await res.json()).error ?? `HTTP ${res.status}`);
+        return;
+      }
+      setError(null);
+      const data = (await res.json()) as WallboxStatusResponse;
+      setStatus(data);
+      onModeChange?.(data.mode);
+    } catch {
+      setError('Verbindung fehlgeschlagen');
+    }
+  }, [onModeChange]);
+
+  useEffect(() => {
+    void refresh();
+    const timer = setInterval(() => void refresh(), 5000);
+    return () => clearInterval(timer);
+  }, [refresh]);
+
+  const changeMode = async (mode: WallboxMode) => {
+    setStatus((s) => (s ? { ...s, mode } : s));
+    onModeChange?.(mode);
+    await fetch('/api/wallbox/mode', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ mode }),
+    });
+    void refresh();
+  };
+
+  if (error && !status) {
+    return (
+      <div className="rounded-xl border border-[var(--border)] bg-[var(--bg-card)] p-5 mb-4">
+        <p className="text-sm text-[var(--text-secondary)] flex items-center gap-2"><EvCharger size={14} /> Wallbox-Steuerung</p>
+        <p className="text-sm text-red-400 mt-2">{error}</p>
+      </div>
+    );
+  }
+
+  if (!status) return null;
+
+  return (
+    <div className="rounded-xl border border-[var(--border)] bg-[var(--bg-card)] p-5 mb-4">
+      <div className="flex items-center justify-between mb-3">
+        <span
+          className={`text-xs px-2 py-0.5 rounded-full border ${
+            status.connected
+              ? 'bg-green-500/20 text-green-400 border-green-500/30'
+              : 'bg-red-500/20 text-red-400 border-red-500/30'
+          }`}
+        >
+          {status.connected ? 'Modbus verbunden' : 'Modbus getrennt'}
+        </span>
+        <span
+          className={`text-xs px-2 py-0.5 rounded-full border ${
+            status.vehicleConnected
+              ? 'bg-blue-500/20 text-blue-400 border-blue-500/30'
+              : 'bg-transparent text-[var(--text-secondary)] border-[var(--border)]'
+          }`}
+        >
+          {status.vehicleConnected ? 'Fahrzeug verbunden' : 'Kein Fahrzeug'}
+        </span>
+      </div>
+      <div className="flex gap-1.5">
+        {(['off', 'pv', 'manual'] as const).map((m) => {
+          const active = status.mode === m;
+          const colorClass = active
+            ? modeColors[m]
+            : 'bg-transparent text-[var(--text-secondary)] border-[var(--border)] hover:text-[var(--text-primary)] hover:border-[var(--text-secondary)]';
+          return (
+            <button
+              key={m}
+              onClick={() => void changeMode(m)}
+              className={`px-3 py-1 rounded-full text-sm font-medium border transition-colors cursor-pointer ${colorClass}`}
+            >
+              {modeLabels[m]}
+            </button>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
