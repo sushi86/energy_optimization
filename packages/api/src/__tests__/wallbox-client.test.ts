@@ -1,0 +1,134 @@
+import { describe, it, expect, beforeEach, vi } from 'vitest';
+
+const mockConnectTCP = vi.fn().mockResolvedValue(undefined);
+const mockSetID = vi.fn();
+const mockClose = vi.fn((cb: () => void) => cb());
+const mockReadHoldingRegisters = vi.fn();
+const mockWriteRegisters = vi.fn().mockResolvedValue(undefined);
+
+vi.mock('modbus-serial', () => ({
+  default: vi.fn().mockImplementation(() => ({
+    connectTCP: mockConnectTCP,
+    setID: mockSetID,
+    close: mockClose,
+    readHoldingRegisters: mockReadHoldingRegisters,
+    writeRegisters: mockWriteRegisters,
+  })),
+}));
+
+const { WallboxClient, createWallboxClient } = await import('../wallbox/WallboxClient.js');
+const { EM2GO_REGISTERS } = await import('../wallbox/types.js');
+
+function regResponse(values: number[]) {
+  return { data: values, buffer: Buffer.alloc(values.length * 2) };
+}
+
+describe('WallboxClient.connect/disconnect', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    mockReadHoldingRegisters.mockResolvedValue(regResponse([0]));
+  });
+
+  it('connects with host/port and sets unit id', async () => {
+    const client = createWallboxClient({ host: '192.168.1.254', port: 502, unitId: 255 });
+    await client.connect();
+
+    expect(mockConnectTCP).toHaveBeenCalledWith('192.168.1.254', { port: 502 });
+    expect(mockSetID).toHaveBeenCalledWith(255);
+  });
+
+  it('disconnect closes the underlying connection', async () => {
+    const client = createWallboxClient({ host: '192.168.1.254', port: 502, unitId: 255 });
+    await client.connect();
+    await client.disconnect();
+
+    expect(mockClose).toHaveBeenCalled();
+  });
+
+  it('createWallboxClient returns a WallboxClient instance', () => {
+    const client = createWallboxClient({ host: 'x', port: 502, unitId: 255 });
+    expect(client).toBeInstanceOf(WallboxClient);
+  });
+});
+
+describe('WallboxClient.getState', () => {
+  let client: InstanceType<typeof WallboxClient>;
+
+  beforeEach(async () => {
+    vi.clearAllMocks();
+    client = createWallboxClient({ host: '192.168.1.254', port: 502, unitId: 255 });
+    await client.connect();
+  });
+
+  function mockRegisters(overrides: Partial<Record<keyof typeof EM2GO_REGISTERS, number[]>> = {}) {
+    const values: Record<number, number[]> = {
+      [EM2GO_REGISTERS.status]: overrides.status ?? [4],
+      [EM2GO_REGISTERS.connectorState]: overrides.connectorState ?? [1],
+      [EM2GO_REGISTERS.errorCode]: overrides.errorCode ?? [0],
+      [EM2GO_REGISTERS.power]: overrides.power ?? [0, 7360],
+      [EM2GO_REGISTERS.energy]: overrides.energy ?? [0, 123],
+      [EM2GO_REGISTERS.currentLimit]: overrides.currentLimit ?? [160],
+      [EM2GO_REGISTERS.currents]: overrides.currents ?? [107],
+      [EM2GO_REGISTERS.currents + 2]: overrides['currents+2' as never] ?? [107],
+      [EM2GO_REGISTERS.currents + 4]: overrides['currents+4' as never] ?? [107],
+      [EM2GO_REGISTERS.voltages]: overrides.voltages ?? [2300],
+      [EM2GO_REGISTERS.voltages + 2]: overrides['voltages+2' as never] ?? [2300],
+      [EM2GO_REGISTERS.voltages + 4]: overrides['voltages+4' as never] ?? [2300],
+      [EM2GO_REGISTERS.phases]: overrides.phases ?? [3],
+      [EM2GO_REGISTERS.chargeDuration]: overrides.chargeDuration ?? [0, 900],
+      [EM2GO_REGISTERS.maxCurrent]: overrides.maxCurrent ?? [160],
+      [EM2GO_REGISTERS.minCurrent]: overrides.minCurrent ?? [60],
+      [EM2GO_REGISTERS.cableMaxCurrent]: overrides.cableMaxCurrent ?? [160],
+      [EM2GO_REGISTERS.safeCurrent]: overrides.safeCurrent ?? [60],
+      [EM2GO_REGISTERS.commTimeout]: overrides.commTimeout ?? [60],
+      [EM2GO_REGISTERS.chargeMode]: overrides.chargeMode ?? [0],
+    };
+    mockReadHoldingRegisters.mockImplementation((addr: number, len: number) => {
+      if (addr === EM2GO_REGISTERS.serial) {
+        const word = 'A'.charCodeAt(0);
+        return Promise.resolve(regResponse(new Array(len).fill(word)));
+      }
+      return Promise.resolve(regResponse(values[addr] ?? [0]));
+    });
+  }
+
+  it('maps status 4 to "charging" and reads power as 32-bit watts', async () => {
+    mockRegisters({ status: [4], power: [0, 7360] });
+    const state = await client.getState();
+
+    expect(state.status).toBe('charging');
+    expect(state.rawStatus).toBe(4);
+    expect(state.powerW).toBe(7360);
+  });
+
+  it('maps status 1 to "available" and status 2/3/6 to "connected"', async () => {
+    mockRegisters({ status: [1] });
+    expect((await client.getState()).status).toBe('available');
+
+    mockRegisters({ status: [2] });
+    expect((await client.getState()).status).toBe('connected');
+
+    mockRegisters({ status: [6] });
+    expect((await client.getState()).status).toBe('connected');
+  });
+
+  it('reports vehicleConnected true when connectorState is non-zero', async () => {
+    mockRegisters({ connectorState: [1] });
+    expect((await client.getState()).vehicleConnected).toBe(true);
+
+    mockRegisters({ connectorState: [0] });
+    expect((await client.getState()).vehicleConnected).toBe(false);
+  });
+
+  it('scales currentLimit register (0.1A) down to amperes', async () => {
+    mockRegisters({ currentLimit: [160] });
+    expect((await client.getState()).chargingCurrentA).toBe(16);
+  });
+
+  it('caches the last successful read for getLastState()', async () => {
+    expect(client.getLastState()).toBeNull();
+    mockRegisters({});
+    const state = await client.getState();
+    expect(client.getLastState()).toEqual(state);
+  });
+});
