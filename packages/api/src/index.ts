@@ -47,6 +47,7 @@ async function main() {
     consumptionNightW: 350,
     multiplusRatedPowerW: 4000,
     manualModeFloorPercent: config.MANUAL_MODE_FLOOR_PERCENT,
+    wallboxPvToleranceMinutes: config.WALLBOX_PV_TOLERANCE_MINUTES,
   });
 
   await Promise.all([appState.vrm.refreshForecast(), appState.vrm.refreshActualYield()]);
@@ -102,6 +103,7 @@ async function main() {
       await client.connect();
       client.startPolling(config.WALLBOX_POLL_INTERVAL_MS, () => {});
       wallboxClient = client;
+      appState.setWallboxClient(client);
       console.log('[energy-control] EM2GO wallbox (Modbus) enabled');
     } catch (err) {
       console.error('[energy-control] EM2GO wallbox connection failed, continuing without it:', (err as Error).message);
