@@ -1,5 +1,11 @@
-import { describe, it, expect, beforeEach, vi } from 'vitest';
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import type { FastifyInstance } from 'fastify';
+import Aedes from 'aedes';
+import { createServer, type Server } from 'net';
+import { mkdtempSync, rmSync } from 'fs';
+import { join } from 'path';
+import { tmpdir } from 'os';
+import { AppState as AppStateClass } from '../app-state.js';
 
 const mockConnectTCP = vi.fn().mockResolvedValue(undefined);
 const mockSetID = vi.fn();
@@ -86,5 +92,100 @@ describe('wallbox routes', () => {
     const res = await noWallboxApp.inject({ method: 'GET', url: '/api/wallbox/status' });
     expect(res.statusCode).toBe(503);
     await noWallboxApp.close();
+  });
+
+  it('GET /api/wallbox/status includes connected and mode fields', async () => {
+    const res = await app.inject({ method: 'GET', url: '/api/wallbox/status' });
+    expect(res.statusCode).toBe(200);
+    const body = res.json();
+    expect(body.connected).toBe(true);
+    expect(body.mode).toBe('off');
+  });
+
+  it('POST /api/wallbox/mode without AppState returns 500', async () => {
+    const res = await app.inject({ method: 'POST', url: '/api/wallbox/mode', payload: { mode: 'pv' } });
+    expect(res.statusCode).toBe(500);
+  });
+});
+
+describe('wallbox routes — with AppState', () => {
+  let app: FastifyInstance;
+  let broker: Aedes;
+  let netServer: Server;
+  let appState: AppStateClass;
+  let tmpDir: string;
+
+  function startBroker(): Promise<{ broker: Aedes; server: Server; port: number }> {
+    return new Promise((resolve) => {
+      const b = new Aedes();
+      const s = createServer(b.handle);
+      s.listen(0, () => {
+        const addr = s.address();
+        const port = typeof addr === 'object' && addr ? addr.port : 0;
+        resolve({ broker: b, server: s, port });
+      });
+    });
+  }
+
+  beforeEach(async () => {
+    vi.clearAllMocks();
+    mockReadHoldingRegisters.mockResolvedValue(regResponse([1]));
+    const wallboxClient = createWallboxClient({ host: '192.168.1.254', port: 502, unitId: 255 });
+    await wallboxClient.connect();
+
+    tmpDir = mkdtempSync(join(tmpdir(), 'wallbox-routes-test-'));
+    let port: number;
+    ({ broker, server: netServer, port } = await startBroker());
+    appState = await AppStateClass.create({
+      mqttUrl: `tcp://localhost:${port}`,
+      deviceId: 'test-device',
+      vrmToken: 'test',
+      vrmSiteId: 'test',
+      batteryCapacityKwh: 16,
+      minSocPercent: 20,
+      targetSocPercent: 100,
+      maxAcPowerW: 12000,
+      winterModeThresholdFactor: 1.2,
+      regulationIntervalMs: 60000,
+      largeChangeThresholdW: 3000,
+      deadbandW: 50,
+      priceOptimization: false,
+      allowFeedInNegativePrice: false,
+      feedInRateCentPerKwh: 7,
+      preferredMaxChargeW: 5000,
+      activeMorningDischarge: false,
+      activeMorningDischargeMinSocPercent: 5,
+      forecastCorrectionOverride: null,
+      consumptionDayW: 500,
+      consumptionNightW: 350,
+      multiplusRatedPowerW: 4000,
+      manualModeFloorPercent: 50,
+      dataDir: tmpDir,
+    });
+    app = buildServer({ testing: true, wallboxClient, appState });
+    await app.ready();
+  });
+
+  afterEach(async () => {
+    await app.close();
+    await appState.stop();
+    rmSync(tmpDir, { recursive: true, force: true });
+    await new Promise<void>((resolve) => {
+      netServer.close(() => broker.close(() => resolve()));
+    });
+  });
+
+  it('POST /api/wallbox/mode sets the mode and GET /api/wallbox/status reflects it', async () => {
+    const setRes = await app.inject({ method: 'POST', url: '/api/wallbox/mode', payload: { mode: 'pv' } });
+    expect(setRes.statusCode).toBe(200);
+    expect(setRes.json().mode).toBe('pv');
+
+    const statusRes = await app.inject({ method: 'GET', url: '/api/wallbox/status' });
+    expect(statusRes.json().mode).toBe('pv');
+  });
+
+  it('POST /api/wallbox/mode rejects an invalid mode', async () => {
+    const res = await app.inject({ method: 'POST', url: '/api/wallbox/mode', payload: { mode: 'bogus' } });
+    expect(res.statusCode).toBe(400);
   });
 });

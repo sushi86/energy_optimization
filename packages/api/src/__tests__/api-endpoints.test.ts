@@ -59,6 +59,7 @@ describe('API Endpoints', () => {
       consumptionNightW: 350,
       multiplusRatedPowerW: 4000,
       manualModeFloorPercent: 50,
+      wallboxPvToleranceMinutes: 5,
       dataDir: tmpDir,
     });
     app = buildServer({ testing: true, appState, pvSettingsPath });
@@ -94,6 +95,7 @@ describe('API Endpoints', () => {
     const body = res.json();
     expect(body.batteryCapacityKwh).toBe(16);
     expect(body.minSocPercent).toBe(20);
+    expect(body.wallboxPvToleranceMinutes).toBe(5);
   });
 
   it('PUT /api/config updates config', async () => {
@@ -109,10 +111,12 @@ describe('API Endpoints', () => {
         regulationIntervalMs: 60000,
         largeChangeThresholdW: 3000,
         deadbandW: 50,
+        wallboxPvToleranceMinutes: 3,
       },
     });
     expect(res.statusCode).toBe(200);
     expect(res.json().batteryCapacityKwh).toBe(20);
+    expect(res.json().wallboxPvToleranceMinutes).toBe(3);
   });
 
   it('POST /api/controller/mode sets mode', async () => {

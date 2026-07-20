@@ -308,6 +308,7 @@ export function buildServer(options: ServerOptions = {}): FastifyInstance {
       activeMorningDischarge: c.activeMorningDischarge,
       activeMorningDischargeMinSocPercent: c.activeMorningDischargeMinSocPercent,
       manualModeFloorPercent: c.manualModeFloorPercent,
+      wallboxPvToleranceMinutes: c.wallboxPvToleranceMinutes,
     };
   });
 
@@ -331,6 +332,7 @@ export function buildServer(options: ServerOptions = {}): FastifyInstance {
       activeMorningDischarge: updated.activeMorningDischarge,
       activeMorningDischargeMinSocPercent: updated.activeMorningDischargeMinSocPercent,
       manualModeFloorPercent: updated.manualModeFloorPercent,
+      wallboxPvToleranceMinutes: updated.wallboxPvToleranceMinutes,
     };
   });
 
@@ -731,15 +733,27 @@ export function buildServer(options: ServerOptions = {}): FastifyInstance {
 
   app.get('/api/wallbox/status', async (_request, reply) => {
     if (!wallboxClient) return reply.code(503).send({ error: 'Wallbox not configured' });
+    const mode = state?.wallboxController.getMode() ?? 'off';
     // Serve the background poller's cache instead of issuing a fresh Modbus read per
     // request — the wallbox's Modbus TCP stack can't handle concurrent request streams.
     const cached = wallboxClient.getLastState();
-    if (cached) return cached;
+    if (cached) return { ...cached, connected: wallboxClient.isConnected(), mode };
     try {
-      return await wallboxClient.getState();
+      const fresh = await wallboxClient.getState();
+      return { ...fresh, connected: wallboxClient.isConnected(), mode };
     } catch (err) {
       return reply.code(502).send({ error: (err as Error).message });
     }
+  });
+
+  app.post('/api/wallbox/mode', async (request, reply) => {
+    if (!state) throw new Error('AppState not initialized');
+    const { mode } = request.body as { mode: string };
+    if (mode !== 'off' && mode !== 'pv' && mode !== 'manual') {
+      return reply.code(400).send({ error: "mode must be 'off', 'pv', or 'manual'" });
+    }
+    state.wallboxController.setMode(mode);
+    return { mode: state.wallboxController.getMode() };
   });
 
   app.post('/api/wallbox/start', async (_request, reply) => {
