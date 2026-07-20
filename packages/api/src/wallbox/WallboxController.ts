@@ -13,6 +13,12 @@ export interface WallboxControlClient {
   setPhases(phases: 1 | 3): Promise<void>;
 }
 
+export interface WallboxControllerDetails {
+  surplusW: number;
+  targetCurrentA: number | null;
+  reason: string;
+}
+
 const VOLTAGE_V = 230;
 const PHASES = 3;
 const MIN_POWER_W = PHASES * MIN_CHARGING_CURRENT_A * VOLTAGE_V;
@@ -26,6 +32,7 @@ export class WallboxController {
   private mode: WallboxControllerMode = 'off';
   private insufficientSince: number | null = null;
   private sufficientSince: number | null = null;
+  private lastDetails: WallboxControllerDetails | null = null;
 
   constructor(config: WallboxControllerDeps) {
     this.config = config;
@@ -33,6 +40,10 @@ export class WallboxController {
 
   getMode(): WallboxControllerMode {
     return this.mode;
+  }
+
+  getLastDetails(): WallboxControllerDetails | null {
+    return this.lastDetails;
   }
 
   setMode(mode: WallboxControllerMode): void {
@@ -58,6 +69,7 @@ export class WallboxController {
       if (this.mode === 'off') {
         this.insufficientSince = null;
         this.sufficientSince = null;
+        this.lastDetails = null;
         if (wallboxState?.status === 'charging') {
           await client.stopCharging();
         }
@@ -67,13 +79,17 @@ export class WallboxController {
       if (this.mode === 'manual') {
         this.insufficientSince = null;
         this.sufficientSince = null;
+        this.lastDetails = null;
         return;
       }
 
       // mode === 'pv'
-      if (!wallboxState) return;
-
       const surplusW = systemState.pvPower - systemState.consumptionPower;
+      if (!wallboxState) {
+        this.lastDetails = { surplusW: Math.round(surplusW), targetCurrentA: null, reason: 'Warte auf Wallbox-Daten' };
+        return;
+      }
+
       const isCharging = wallboxState.status === 'charging';
 
       if (isCharging) {
@@ -84,21 +100,36 @@ export class WallboxController {
           if (Math.round(wallboxState.chargingCurrentA) !== targetA) {
             await client.setChargingCurrent(targetA);
           }
+          this.lastDetails = {
+            surplusW: Math.round(surplusW),
+            targetCurrentA: targetA,
+            reason: `Lädt mit ${targetA} A (Überschuss ${Math.round(surplusW)} W)`,
+          };
         } else {
           if (this.insufficientSince === null) this.insufficientSince = now;
+          const elapsedS = Math.round((now - this.insufficientSince) / 1000);
+          const toleranceS = Math.round(this.config.toleranceMs / 1000);
           if (now - this.insufficientSince >= this.config.toleranceMs) {
             await client.stopCharging();
             this.insufficientSince = null;
           }
+          this.lastDetails = {
+            surplusW: Math.round(surplusW),
+            targetCurrentA: null,
+            reason: `Überschuss unzureichend seit ${elapsedS}s — stoppt nach ${toleranceS}s`,
+          };
         }
       } else {
         this.insufficientSince = null;
         if (!wallboxState.vehicleConnected) {
           this.sufficientSince = null;
+          this.lastDetails = { surplusW: Math.round(surplusW), targetCurrentA: null, reason: 'Kein Fahrzeug verbunden' };
           return;
         }
         if (surplusW >= MIN_POWER_W) {
           if (this.sufficientSince === null) this.sufficientSince = now;
+          const elapsedS = Math.round((now - this.sufficientSince) / 1000);
+          const toleranceS = Math.round(this.config.toleranceMs / 1000);
           if (now - this.sufficientSince >= this.config.toleranceMs) {
             const targetA = clampCurrent(Math.floor(surplusW / (PHASES * VOLTAGE_V)));
             await client.setPhases(3);
@@ -106,8 +137,18 @@ export class WallboxController {
             await client.startCharging();
             this.sufficientSince = null;
           }
+          this.lastDetails = {
+            surplusW: Math.round(surplusW),
+            targetCurrentA: null,
+            reason: `Ausreichend Überschuss seit ${elapsedS}s — startet nach ${toleranceS}s`,
+          };
         } else {
           this.sufficientSince = null;
+          this.lastDetails = {
+            surplusW: Math.round(surplusW),
+            targetCurrentA: null,
+            reason: `Zu wenig Überschuss (${Math.round(surplusW)} W, benötigt ${MIN_POWER_W} W)`,
+          };
         }
       }
     } catch (err) {

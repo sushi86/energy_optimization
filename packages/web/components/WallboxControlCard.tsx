@@ -9,6 +9,7 @@ interface WallboxStatusResponse {
   connected: boolean;
   vehicleConnected: boolean;
   mode: WallboxMode;
+  controllerDetails: { surplusW: number; targetCurrentA: number | null; reason: string } | null;
 }
 
 const modeLabels: Record<WallboxMode, string> = {
@@ -110,6 +111,19 @@ export default function WallboxControlCard({ onModeChange }: { onModeChange?: (m
           );
         })}
       </div>
+      {status.mode === 'pv' && status.controllerDetails && (
+        <div className="mt-3 pt-3 border-t border-[var(--border)] text-xs space-y-1">
+          <div className="flex justify-between gap-4">
+            <span className="text-[var(--text-secondary)]">Überschuss</span>
+            <span>{status.controllerDetails.surplusW.toLocaleString('de-DE')} W</span>
+          </div>
+          <div className="flex justify-between gap-4">
+            <span className="text-[var(--text-secondary)]">Ziel-Ladestrom</span>
+            <span>{status.controllerDetails.targetCurrentA != null ? `${status.controllerDetails.targetCurrentA} A` : '—'}</span>
+          </div>
+          <p className="text-[var(--text-secondary)] pt-1">{status.controllerDetails.reason}</p>
+        </div>
+      )}
     </div>
   );
 }

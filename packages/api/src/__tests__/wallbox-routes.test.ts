@@ -102,6 +102,11 @@ describe('wallbox routes', () => {
     expect(body.mode).toBe('off');
   });
 
+  it('GET /api/wallbox/status includes controllerDetails as null when no AppState is wired', async () => {
+    const res = await app.inject({ method: 'GET', url: '/api/wallbox/status' });
+    expect(res.json().controllerDetails).toBeNull();
+  });
+
   it('POST /api/wallbox/mode without AppState returns 500', async () => {
     const res = await app.inject({ method: 'POST', url: '/api/wallbox/mode', payload: { mode: 'pv' } });
     expect(res.statusCode).toBe(500);

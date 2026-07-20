@@ -209,6 +209,76 @@ describe('WallboxController', () => {
     });
   });
 
+  describe('getLastDetails', () => {
+    it('returns null in off and manual mode', async () => {
+      const ctrl = new WallboxController({ toleranceMs: TOLERANCE_MS });
+      const client = makeClient();
+      await ctrl.tick({ pvPower: 8000, consumptionPower: 500 }, makeState({ status: 'available' }), client, 1_000_000);
+      expect(ctrl.getLastDetails()).toBeNull();
+
+      ctrl.setMode('manual');
+      await ctrl.tick({ pvPower: 8000, consumptionPower: 500 }, makeState({ status: 'available' }), client, 1_000_000);
+      expect(ctrl.getLastDetails()).toBeNull();
+    });
+
+    it('reports the target current while charging with sufficient surplus', async () => {
+      const ctrl = new WallboxController({ toleranceMs: TOLERANCE_MS });
+      ctrl.setMode('pv');
+      const client = makeClient();
+      const state = makeState({ status: 'charging', chargingCurrentA: 8 });
+      await ctrl.tick({ pvPower: 6500, consumptionPower: 500 }, state, client, 1_000_000);
+      expect(ctrl.getLastDetails()).toEqual({ surplusW: 6000, targetCurrentA: 8, reason: 'Lädt mit 8 A (Überschuss 6000 W)' });
+    });
+
+    it('reports the countdown while charging with insufficient surplus', async () => {
+      const ctrl = new WallboxController({ toleranceMs: TOLERANCE_MS });
+      ctrl.setMode('pv');
+      const client = makeClient();
+      const state = makeState({ status: 'charging', chargingCurrentA: 6 });
+      const t0 = 1_000_000;
+      await ctrl.tick({ pvPower: 1000, consumptionPower: 500 }, state, client, t0);
+      await ctrl.tick({ pvPower: 1000, consumptionPower: 500 }, state, client, t0 + 45_000);
+      expect(ctrl.getLastDetails()).toEqual({ surplusW: 500, targetCurrentA: null, reason: 'Überschuss unzureichend seit 45s — stoppt nach 120s' });
+    });
+
+    it('reports "Kein Fahrzeug verbunden" when not charging and no vehicle connected', async () => {
+      const ctrl = new WallboxController({ toleranceMs: TOLERANCE_MS });
+      ctrl.setMode('pv');
+      const client = makeClient();
+      const state = makeState({ status: 'available', vehicleConnected: false });
+      await ctrl.tick({ pvPower: 8000, consumptionPower: 500 }, state, client, 1_000_000);
+      expect(ctrl.getLastDetails()).toEqual({ surplusW: 7500, targetCurrentA: null, reason: 'Kein Fahrzeug verbunden' });
+    });
+
+    it('reports the startup countdown while not charging with sufficient surplus', async () => {
+      const ctrl = new WallboxController({ toleranceMs: TOLERANCE_MS });
+      ctrl.setMode('pv');
+      const client = makeClient();
+      const state = makeState({ status: 'available' });
+      const t0 = 1_000_000;
+      await ctrl.tick({ pvPower: 5500, consumptionPower: 500 }, state, client, t0);
+      await ctrl.tick({ pvPower: 5500, consumptionPower: 500 }, state, client, t0 + 30_000);
+      expect(ctrl.getLastDetails()).toEqual({ surplusW: 5000, targetCurrentA: null, reason: 'Ausreichend Überschuss seit 30s — startet nach 120s' });
+    });
+
+    it('reports insufficient surplus with required-power figure while not charging', async () => {
+      const ctrl = new WallboxController({ toleranceMs: TOLERANCE_MS });
+      ctrl.setMode('pv');
+      const client = makeClient();
+      const state = makeState({ status: 'available' });
+      await ctrl.tick({ pvPower: 1000, consumptionPower: 500 }, state, client, 1_000_000);
+      expect(ctrl.getLastDetails()).toEqual({ surplusW: 500, targetCurrentA: null, reason: 'Zu wenig Überschuss (500 W, benötigt 4140 W)' });
+    });
+
+    it('reports "Warte auf Wallbox-Daten" when wallboxState is null', async () => {
+      const ctrl = new WallboxController({ toleranceMs: TOLERANCE_MS });
+      ctrl.setMode('pv');
+      const client = makeClient();
+      await ctrl.tick({ pvPower: 8000, consumptionPower: 500 }, null, client, 1_000_000);
+      expect(ctrl.getLastDetails()).toEqual({ surplusW: 7500, targetCurrentA: null, reason: 'Warte auf Wallbox-Daten' });
+    });
+  });
+
   describe('updateConfig', () => {
     it('applies a new toleranceMs to subsequent ticks', async () => {
       const ctrl = new WallboxController({ toleranceMs: TOLERANCE_MS });
