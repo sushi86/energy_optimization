@@ -1,6 +1,8 @@
 import { MqttService } from './mqtt-service.js';
 import { VrmService } from './vrm-service.js';
 import { Controller, type ControllerDeps } from './controller.js';
+import { WallboxController } from './wallbox/WallboxController.js';
+import type { WallboxClient } from './wallbox/WallboxClient.js';
 import { ForecastSolarService } from './forecast-solar-service.js';
 import { computeEnsembleForecast } from './ensemble-forecast.js';
 import { computeChargePlan } from './charge-plan.js';
@@ -36,6 +38,7 @@ export interface AppStateOptions {
   consumptionNightW: number;
   multiplusRatedPowerW: number;
   manualModeFloorPercent: number;
+  wallboxPvToleranceMinutes?: number;
   /** Optional override for the data directory (used by tests for isolation) */
   dataDir?: string;
 }
@@ -58,6 +61,8 @@ export class AppState {
   private manualModeTracker: ManualModeTracker | null = null;
   private gridHistoryForTracker: GridHistoryService | null = null;
   private pvHistoryForTracker: GridHistoryService | null = null;
+  readonly wallboxController: WallboxController;
+  private wallboxClient: WallboxClient | null = null;
 
   private constructor(options: AppStateOptions) {
     this.config = { ...options };
@@ -81,6 +86,9 @@ export class AppState {
       allowFeedInNegativePrice: options.allowFeedInNegativePrice ?? false,
       activeMorningDischarge: options.activeMorningDischarge ?? false,
       activeMorningDischargeMinSocPercent: options.activeMorningDischargeMinSocPercent ?? 5,
+    });
+    this.wallboxController = new WallboxController({
+      toleranceMs: (options.wallboxPvToleranceMinutes ?? 2) * 60_000,
     });
     const dataDir = options.dataDir ?? resolve(dirname(fileURLToPath(import.meta.url)), '../../../data');
     this.pvSettingsPath = resolve(dataDir, 'pv-settings.json');
@@ -142,6 +150,19 @@ export class AppState {
     }
 
     const systemState = this.mqtt.getState();
+
+    if (this.wallboxClient) {
+      try {
+        await this.wallboxController.tick(
+          { pvPower: systemState.pvPower, consumptionPower: systemState.consumptionPower },
+          this.wallboxClient.getLastState(),
+          this.wallboxClient,
+        );
+      } catch (e) {
+        console.error('[wallbox-controller] tick failed:', (e as Error).message);
+      }
+    }
+
     const pvSettings = loadPvSettings(this.pvSettingsPath);
     const emptyForecast = { hours: [], totalKwh: 0, intervalHours: 1 };
     const vrmForecast = pvSettings.vrmForecastEnabled ? this.vrm.getForecast() : emptyForecast;
@@ -270,6 +291,10 @@ export class AppState {
     this.manualModeTracker = tracker;
   }
 
+  setWallboxClient(client: WallboxClient): void {
+    this.wallboxClient = client;
+  }
+
   getConfig(): AppStateOptions {
     return { ...this.config };
   }
@@ -280,6 +305,7 @@ export class AppState {
     }
     Object.assign(this.config, updates);
     this.controller.updateConfig(this.buildControllerConfig());
+    this.wallboxController.updateConfig({ toleranceMs: (this.config.wallboxPvToleranceMinutes ?? 2) * 60_000 });
     this.saveConfigOverrides();
     // Apply the new config immediately instead of waiting up to regulationIntervalMs
     // for the next tick.
@@ -308,6 +334,7 @@ export class AppState {
       const overrides = JSON.parse(content) as Partial<AppStateOptions>;
       Object.assign(this.config, overrides);
       this.controller.updateConfig(this.buildControllerConfig());
+      this.wallboxController.updateConfig({ toleranceMs: (this.config.wallboxPvToleranceMinutes ?? 2) * 60_000 });
       console.log('[config] Loaded overrides from disk:', Object.keys(overrides).join(', '));
     } catch {
       // No overrides file yet — use defaults
@@ -334,6 +361,7 @@ export class AppState {
       consumptionNightW: this.config.consumptionNightW,
       multiplusRatedPowerW: this.config.multiplusRatedPowerW,
       manualModeFloorPercent: this.config.manualModeFloorPercent,
+      wallboxPvToleranceMinutes: this.config.wallboxPvToleranceMinutes,
     };
     try {
       const dir = dirname(this.configOverridesPath);
