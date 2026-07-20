@@ -174,6 +174,30 @@ describe('WallboxClient.getState', () => {
     const state = await client.getState();
     expect(state.serial).toBe('ABC');
   });
+
+  it('isConnected is false before any successful read', () => {
+    expect(client.isConnected()).toBe(false);
+  });
+
+  it('isConnected is true after a successful getState()', async () => {
+    mockRegisters({});
+    await client.getState();
+    expect(client.isConnected()).toBe(true);
+  });
+
+  it('isConnected is false after a failed getState(), true again after recovery', async () => {
+    mockRegisters({});
+    await client.getState();
+    expect(client.isConnected()).toBe(true);
+
+    mockReadHoldingRegisters.mockRejectedValueOnce(new Error('ECONNRESET'));
+    await expect(client.getState()).rejects.toThrow('ECONNRESET');
+    expect(client.isConnected()).toBe(false);
+
+    mockRegisters({});
+    await client.getState();
+    expect(client.isConnected()).toBe(true);
+  });
 });
 
 describe('WallboxClient control methods', () => {

@@ -40,6 +40,7 @@ export class WallboxClient {
   private readonly config: WallboxConfig;
   private pollTimer: ReturnType<typeof setInterval> | null = null;
   private lastState: WallboxState | null = null;
+  private lastError: string | null = null;
   private queue: Promise<unknown> = Promise.resolve();
 
   constructor(config: WallboxConfig) {
@@ -92,7 +93,14 @@ export class WallboxClient {
   }
 
   async getState(): Promise<WallboxState> {
-    return this.withLock(() => this.readState());
+    try {
+      const state = await this.withLock(() => this.readState());
+      this.lastError = null;
+      return state;
+    } catch (err) {
+      this.lastError = (err as Error).message;
+      throw err;
+    }
   }
 
   private async readState(): Promise<WallboxState> {
@@ -142,6 +150,10 @@ export class WallboxClient {
 
   getLastState(): WallboxState | null {
     return this.lastState;
+  }
+
+  isConnected(): boolean {
+    return this.lastState !== null && this.lastError === null;
   }
 
   async startCharging(): Promise<void> {
