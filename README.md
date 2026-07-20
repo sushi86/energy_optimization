@@ -126,6 +126,31 @@ All configuration lives in `.env`. See [`.env.example`](.env.example) for the fu
 
 Runtime parameters (battery capacity, SoC limits, deadband, charge power, etc.) can be adjusted live through the settings UI or the REST API.
 
+## Optional Integrations
+
+### EM2GO Wallbox (Modbus TCP)
+
+Manual control of an EM2GO Home 11kW wallbox via Modbus TCP.
+
+Environment variables (all optional — omitting `WALLBOX_HOST` disables the integration):
+
+| Variable | Default | Description |
+|---|---|---|
+| `WALLBOX_HOST` | — | IP address of the wallbox |
+| `WALLBOX_PORT` | `502` | Modbus TCP port |
+| `WALLBOX_UNIT_ID` | `255` | Modbus unit/slave ID |
+| `WALLBOX_POLL_INTERVAL_MS` | `5000` | Status polling interval |
+
+**⚠️ Only one Modbus TCP connection is supported by the wallbox at a time.** If you use
+[evcc](https://evcc.io) to control the same wallbox, you must stop evcc (or remove the
+wallbox from its config) before starting this service — running both simultaneously will
+cause connection failures or inconsistent state.
+
+The register map (`packages/api/src/wallbox/types.ts`) was derived from evcc's open-source
+`charger/em2go.go` driver and verified against a live EM2GO Home 11kW unit. Older Home
+firmware (< 1.3) needs an additional current-rounding workaround on enable/phase-switch
+that is not implemented here (see the `TODO` in `types.ts`).
+
 ## Controller modes
 
 | Mode | Behavior |
