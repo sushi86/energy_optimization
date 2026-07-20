@@ -11,7 +11,7 @@ import { computeChargePlan } from './charge-plan.js';
 import type { InexogyService } from './inexogy-service.js';
 import type { GridHistoryService } from './grid-history-service.js';
 import type { NibePoller } from './nibe-poller.js';
-import type { WallboxPoller } from './wallbox-poller.js';
+import type { WallboxClient } from './wallbox/WallboxClient.js';
 import type { PushService } from './push-service.js';
 import { energyEvents } from './energy-events.js';
 import { getVapidPublicKey } from './vapid.js';
@@ -28,7 +28,7 @@ export interface ServerOptions {
   socHistoryService?: GridHistoryService;
   pvHistoryService?: GridHistoryService;
   nibePoller?: NibePoller;
-  wallboxPoller?: WallboxPoller;
+  wallboxClient?: WallboxClient;
   pushService?: PushService;
   dailySummaryService?: DailySummaryService;
 }
@@ -117,7 +117,7 @@ export function buildServer(options: ServerOptions = {}): FastifyInstance {
   const socHistoryService = options.socHistoryService;
   const pvHistoryService = options.pvHistoryService;
   const nibePoller = options.nibePoller;
-  const wallboxPoller = options.wallboxPoller;
+  const wallboxClient = options.wallboxClient;
   const pushService = options.pushService;
   const dailySummaryService = options.dailySummaryService;
   const pvSettingsPath = options.pvSettingsPath ?? resolve(dirname(fileURLToPath(import.meta.url)), '../../../data/pv-settings.json');
@@ -208,7 +208,7 @@ export function buildServer(options: ServerOptions = {}): FastifyInstance {
         pvPeakKwp: loadPvSettings(pvSettingsPath).kwp,
         mpptTemperatureC,
         heatPumpPowerW: nibePoller?.getPowerW() ?? null,
-        wallboxPowerW: wallboxPoller?.getPowerW() ?? null,
+        wallboxPowerW: wallboxClient?.getLastState()?.powerW ?? null,
         timestamp: s.timestamp.toISOString(),
       });
 
@@ -724,6 +724,62 @@ export function buildServer(options: ServerOptions = {}): FastifyInstance {
     const { date } = request.params as { date: string };
     if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) return { summary: null };
     return { summary: dailySummaryService.getSummary(date) };
+  });
+
+  // --- Wallbox endpoints ---
+
+  app.get('/api/wallbox/status', async (_request, reply) => {
+    if (!wallboxClient) return reply.code(503).send({ error: 'Wallbox not configured' });
+    try {
+      return await wallboxClient.getState();
+    } catch (err) {
+      return reply.code(502).send({ error: (err as Error).message });
+    }
+  });
+
+  app.post('/api/wallbox/start', async (_request, reply) => {
+    if (!wallboxClient) return reply.code(503).send({ error: 'Wallbox not configured' });
+    try {
+      await wallboxClient.startCharging();
+      return { ok: true };
+    } catch (err) {
+      return reply.code(502).send({ error: (err as Error).message });
+    }
+  });
+
+  app.post('/api/wallbox/stop', async (_request, reply) => {
+    if (!wallboxClient) return reply.code(503).send({ error: 'Wallbox not configured' });
+    try {
+      await wallboxClient.stopCharging();
+      return { ok: true };
+    } catch (err) {
+      return reply.code(502).send({ error: (err as Error).message });
+    }
+  });
+
+  app.post('/api/wallbox/current', async (request, reply) => {
+    if (!wallboxClient) return reply.code(503).send({ error: 'Wallbox not configured' });
+    const { ampere } = request.body as { ampere: number };
+    try {
+      await wallboxClient.setChargingCurrent(ampere);
+      return { ok: true };
+    } catch (err) {
+      return reply.code(400).send({ error: (err as Error).message });
+    }
+  });
+
+  app.post('/api/wallbox/phases', async (request, reply) => {
+    if (!wallboxClient) return reply.code(503).send({ error: 'Wallbox not configured' });
+    const { phases } = request.body as { phases: 1 | 3 };
+    if (phases !== 1 && phases !== 3) {
+      return reply.code(400).send({ error: 'phases must be 1 or 3' });
+    }
+    try {
+      await wallboxClient.setPhases(phases);
+      return { ok: true };
+    } catch (err) {
+      return reply.code(502).send({ error: (err as Error).message });
+    }
   });
 
   // Proxy everything else to Next.js (running on port 3000 internally)

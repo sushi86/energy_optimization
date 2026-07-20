@@ -10,7 +10,7 @@ import { buildServer } from './server.js';
 import { InexogyService } from './inexogy-service.js';
 import { GridHistoryService } from './grid-history-service.js';
 import { NibePoller } from './nibe-poller.js';
-import { WallboxPoller } from './wallbox-poller.js';
+import { createWallboxClient } from './wallbox/WallboxClient.js';
 import { initVapid } from './vapid.js';
 import { PushService } from './push-service.js';
 import { PvTracker } from './pv-tracker.js';
@@ -91,11 +91,16 @@ async function main() {
     console.log('[energy-control] nibe heat pump poller enabled');
   }
 
-  let wallboxPoller: WallboxPoller | undefined;
-  if (config.WALLBOX_URL) {
-    wallboxPoller = new WallboxPoller({ url: config.WALLBOX_URL });
-    wallboxPoller.start();
-    console.log('[energy-control] tesla wallbox poller enabled');
+  let wallboxClient: import('./wallbox/WallboxClient.js').WallboxClient | undefined;
+  if (config.WALLBOX_HOST) {
+    wallboxClient = createWallboxClient({
+      host: config.WALLBOX_HOST,
+      port: config.WALLBOX_PORT,
+      unitId: config.WALLBOX_UNIT_ID,
+    });
+    await wallboxClient.connect();
+    wallboxClient.startPolling(config.WALLBOX_POLL_INTERVAL_MS, () => {});
+    console.log('[energy-control] EM2GO wallbox (Modbus) enabled');
   }
 
   // --- Push notifications ---
@@ -108,7 +113,7 @@ async function main() {
   appState.setPvTracker(pvTracker, gridHistoryService, pvHistoryService);
   appState.setManualModeTracker(manualModeTracker);
 
-  const server = buildServer({ appState, inexogyService, gridHistoryService, batteryHistoryService, consumptionHistoryService, socHistoryService, pvHistoryService, nibePoller, wallboxPoller, pushService, dailySummaryService });
+  const server = buildServer({ appState, inexogyService, gridHistoryService, batteryHistoryService, consumptionHistoryService, socHistoryService, pvHistoryService, nibePoller, wallboxClient, pushService, dailySummaryService });
   await server.listen({ port: 3001, host: '0.0.0.0' });
 
   console.log('[energy-control] Server running on http://0.0.0.0:3001');
@@ -123,7 +128,8 @@ async function main() {
     pvHistoryService.stop();
     socHistoryService.stop();
     nibePoller?.stop();
-    wallboxPoller?.stop();
+    wallboxClient?.stopPolling();
+    await wallboxClient?.disconnect();
     process.exit(0);
   };
 

@@ -50,11 +50,21 @@ describe('loadConfig', () => {
     delete process.env.NIBE_URL;
     delete process.env.NIBE_USERNAME;
     delete process.env.NIBE_PASSWORD;
-    delete process.env.WALLBOX_URL;
+    delete process.env.WALLBOX_HOST;
     const config = loadConfig();
     expect(config.NIBE_URL).toBeUndefined();
     expect(config.NIBE_USERNAME).toBeUndefined();
     expect(config.NIBE_PASSWORD).toBeUndefined();
-    expect(config.WALLBOX_URL).toBeUndefined();
+    expect(config.WALLBOX_HOST).toBeUndefined();
+  });
+
+  it('applies wallbox defaults when WALLBOX_HOST is unset', () => {
+    process.env.VICTRON_VRM_TOKEN = 'test-token';
+    process.env.VICTRON_VRM_SITE_ID = 'test-site';
+    delete process.env.WALLBOX_HOST;
+    const config = loadConfig();
+    expect(config.WALLBOX_PORT).toBe(502);
+    expect(config.WALLBOX_UNIT_ID).toBe(255);
+    expect(config.WALLBOX_POLL_INTERVAL_MS).toBe(5000);
   });
 });

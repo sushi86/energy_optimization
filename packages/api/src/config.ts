@@ -26,7 +26,10 @@ const configSchema = z.object({
   NIBE_URL: z.string().optional(),
   NIBE_USERNAME: z.string().optional(),
   NIBE_PASSWORD: z.string().optional(),
-  WALLBOX_URL: z.string().optional(),
+  WALLBOX_HOST: z.string().optional(),
+  WALLBOX_PORT: z.coerce.number().default(502),
+  WALLBOX_UNIT_ID: z.coerce.number().default(255),
+  WALLBOX_POLL_INTERVAL_MS: z.coerce.number().default(5000),
 });
 
 export type Config = z.infer<typeof configSchema>;
