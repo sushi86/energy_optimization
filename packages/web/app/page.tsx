@@ -3,6 +3,7 @@
 import { useEffect, useState, useRef, useCallback, useMemo } from 'react';
 import Link from 'next/link';
 import { useWebSocket, type SystemStatus, type ControllerDetails, type ChargePlan, type ChargePlanSlot } from '../hooks/use-websocket';
+import WallboxCard from '../components/WallboxCard';
 import { berechneStrompreis, getTarifstufe } from './strompreis';
 import { Heater, EvCharger } from 'lucide-react';
 
@@ -1509,6 +1510,8 @@ export default function Dashboard() {
           </div>
         </div>
       </div>
+
+      <WallboxCard />
 
       {/* Row 2: Grid + Battery */}
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 mb-8">
