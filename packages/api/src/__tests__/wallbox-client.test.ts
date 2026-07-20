@@ -131,4 +131,45 @@ describe('WallboxClient.getState', () => {
     const state = await client.getState();
     expect(client.getLastState()).toEqual(state);
   });
+
+  it('decodes serial number correctly from register words', async () => {
+    // Mock serial registers with char codes for "ABC" plus null padding
+    const serialChars = [
+      'A'.charCodeAt(0), // 65
+      'B'.charCodeAt(0), // 66
+      'C'.charCodeAt(0), // 67
+      0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, // padding to 16 words
+    ];
+    mockReadHoldingRegisters.mockImplementation((addr: number, len: number) => {
+      if (addr === EM2GO_REGISTERS.serial) {
+        return Promise.resolve(regResponse(serialChars));
+      }
+      // Use default mock registers for other addresses
+      const values: Record<number, number[]> = {
+        [EM2GO_REGISTERS.status]: [4],
+        [EM2GO_REGISTERS.connectorState]: [1],
+        [EM2GO_REGISTERS.errorCode]: [0],
+        [EM2GO_REGISTERS.power]: [0, 7360],
+        [EM2GO_REGISTERS.energy]: [0, 123],
+        [EM2GO_REGISTERS.currentLimit]: [160],
+        [EM2GO_REGISTERS.currents]: [107],
+        [EM2GO_REGISTERS.currents + 2]: [107],
+        [EM2GO_REGISTERS.currents + 4]: [107],
+        [EM2GO_REGISTERS.voltages]: [2300],
+        [EM2GO_REGISTERS.voltages + 2]: [2300],
+        [EM2GO_REGISTERS.voltages + 4]: [2300],
+        [EM2GO_REGISTERS.phases]: [3],
+        [EM2GO_REGISTERS.chargeDuration]: [0, 900],
+        [EM2GO_REGISTERS.maxCurrent]: [160],
+        [EM2GO_REGISTERS.minCurrent]: [60],
+        [EM2GO_REGISTERS.cableMaxCurrent]: [160],
+        [EM2GO_REGISTERS.safeCurrent]: [60],
+        [EM2GO_REGISTERS.commTimeout]: [60],
+        [EM2GO_REGISTERS.chargeMode]: [0],
+      };
+      return Promise.resolve(regResponse(values[addr] ?? [0]));
+    });
+    const state = await client.getState();
+    expect(state.serial).toBe('ABC');
+  });
 });

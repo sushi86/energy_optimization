@@ -60,9 +60,7 @@ export class WallboxClient {
 
   private async readSerial(): Promise<string> {
     const res = await this.client.readHoldingRegisters(EM2GO_REGISTERS.serial, 16);
-    const bytes = Buffer.alloc(res.data.length * 2);
-    res.data.forEach((word: number, i: number) => bytes.writeUInt16BE(word, i * 2));
-    return bytes.toString('utf16le').replace(/\x00/g, '');
+    return String.fromCharCode(...res.data).replace(/\0/g, '').trim();
   }
 
   async getState(): Promise<WallboxState> {
