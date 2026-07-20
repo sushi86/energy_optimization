@@ -1,6 +1,8 @@
 import ModbusRTU from 'modbus-serial';
 import {
   EM2GO_REGISTERS,
+  MAX_CHARGING_CURRENT_A,
+  MIN_CHARGING_CURRENT_A,
   type WallboxConfig,
   type WallboxState,
   type WallboxStatus,
@@ -110,6 +112,27 @@ export class WallboxClient {
 
   getLastState(): WallboxState | null {
     return this.lastState;
+  }
+
+  async startCharging(): Promise<void> {
+    await this.client.writeRegisters(EM2GO_REGISTERS.chargeCommand, [1]);
+  }
+
+  async stopCharging(): Promise<void> {
+    await this.client.writeRegisters(EM2GO_REGISTERS.chargeCommand, [2]);
+  }
+
+  async setChargingCurrent(ampere: number): Promise<void> {
+    if (ampere < MIN_CHARGING_CURRENT_A || ampere > MAX_CHARGING_CURRENT_A) {
+      throw new Error(
+        `Charging current must be between ${MIN_CHARGING_CURRENT_A} and ${MAX_CHARGING_CURRENT_A}A, got ${ampere}`,
+      );
+    }
+    await this.client.writeRegisters(EM2GO_REGISTERS.currentLimit, [Math.round(ampere * 10)]);
+  }
+
+  async setPhases(phases: 1 | 3): Promise<void> {
+    await this.client.writeRegisters(EM2GO_REGISTERS.phases, [phases]);
   }
 
   stopPolling(): void {

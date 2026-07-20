@@ -173,3 +173,46 @@ describe('WallboxClient.getState', () => {
     expect(state.serial).toBe('ABC');
   });
 });
+
+describe('WallboxClient control methods', () => {
+  let client: InstanceType<typeof WallboxClient>;
+
+  beforeEach(async () => {
+    vi.clearAllMocks();
+    client = createWallboxClient({ host: '192.168.1.254', port: 502, unitId: 255 });
+    await client.connect();
+  });
+
+  it('startCharging writes ChargeCommand=1 via writeRegisters (FC16)', async () => {
+    await client.startCharging();
+    expect(mockWriteRegisters).toHaveBeenCalledWith(EM2GO_REGISTERS.chargeCommand, [1]);
+  });
+
+  it('stopCharging writes ChargeCommand=2', async () => {
+    await client.stopCharging();
+    expect(mockWriteRegisters).toHaveBeenCalledWith(EM2GO_REGISTERS.chargeCommand, [2]);
+  });
+
+  it('setChargingCurrent writes the scaled 0.1A value for valid input', async () => {
+    await client.setChargingCurrent(10);
+    expect(mockWriteRegisters).toHaveBeenCalledWith(EM2GO_REGISTERS.currentLimit, [100]);
+  });
+
+  it('setChargingCurrent throws for values below 6A and does not write', async () => {
+    await expect(client.setChargingCurrent(5)).rejects.toThrow(/6.*16/);
+    expect(mockWriteRegisters).not.toHaveBeenCalled();
+  });
+
+  it('setChargingCurrent throws for values above 16A and does not write', async () => {
+    await expect(client.setChargingCurrent(17)).rejects.toThrow(/6.*16/);
+    expect(mockWriteRegisters).not.toHaveBeenCalled();
+  });
+
+  it('setPhases writes 1 or 3 to the phases register', async () => {
+    await client.setPhases(1);
+    expect(mockWriteRegisters).toHaveBeenCalledWith(EM2GO_REGISTERS.phases, [1]);
+
+    await client.setPhases(3);
+    expect(mockWriteRegisters).toHaveBeenCalledWith(EM2GO_REGISTERS.phases, [3]);
+  });
+});
