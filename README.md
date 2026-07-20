@@ -7,15 +7,13 @@
 <p align="center">
   Smart battery and solar management for Victron Energy systems.<br>
   Real-time grid regulation, price-optimized charging, PV forecast ensemble,<br>
-  and live monitoring of Nibe heat pump and Tesla wallbox.
+  and live monitoring of Nibe heat pump and EM2GO wallbox.
 </p>
 
 <p align="center">
   <img src="docs/images/victron-logo.png" height="40" alt="Victron Energy">
   &nbsp;&nbsp;
   <img src="docs/images/nibe-logo.jpg" height="40" alt="Nibe">
-  &nbsp;&nbsp;
-  <img src="docs/images/tesla-logo.png" height="40" alt="Tesla">
 </p>
 
 ---
@@ -39,7 +37,8 @@ Energy Control connects to a Victron system via MQTT and VRM, monitors solar pro
 - **Charge planning** — generates hourly charge/feed-in schedules based on PV forecast, battery state, consumption profiles, and market prices
 - **PV forecast ensemble** — combines VRM forecast and [forecast.solar](https://forecast.solar) with automatic correction factors for more accurate predictions
 - **Smart meter integration** — optional Inexogy smart meter support for precise grid measurements
-- **Device monitoring** — live power consumption from Nibe heat pump and Tesla Wall Connector, displayed in the dashboard
+- **Device monitoring** — live power consumption from Nibe heat pump, displayed in the dashboard
+- **Wallbox control** — Modbus TCP control of an EM2GO Home 11kW wallbox (start/stop, current, phase switching)
 - **Live dashboard** — real-time web UI with power flows, charge plan visualization, price charts, and grid history
 
 ## Architecture
@@ -55,11 +54,11 @@ Energy Control connects to a Victron system via MQTT and VRM, monitors solar pro
 │         │                                    │
 │   MQTT ─┤─ VRM API ─ forecast.solar         │
 │         │─ EPEX prices ─ Inexogy API        │
-│         │─ Nibe API ─ Tesla Wallbox API     │
+│         │─ Nibe API ─ EM2GO Modbus TCP      │
 └─────────┼────────────────────────────────────┘
           │
     ┌─────▼─────┐  ┌───────────┐  ┌───────────┐
-    │  Victron   │  │   Nibe    │  │  Tesla    │
+    │  Victron   │  │   Nibe    │  │  EM2GO    │
     │  GX / MQTT │  │ Heat Pump │  │  Wallbox  │
     └───────────┘  └───────────┘  └───────────┘
 ```
@@ -120,7 +119,6 @@ All configuration lives in `.env`. See [`.env.example`](.env.example) for the fu
 | `NIBE_URL` | no | Nibe heat pump API URL (e.g. `https://192.168.x.x:8443`) |
 | `NIBE_USERNAME` | no | Nibe heat pump API username |
 | `NIBE_PASSWORD` | no | Nibe heat pump API password |
-| `WALLBOX_URL` | no | Tesla Wall Connector URL (e.g. `http://192.168.x.x`) |
 | `MPPT_TEMPERATURE_URL` | no | Shelly temperature sensor endpoint |
 | `DEPLOY_SERVER` | no | SSH target for `deploy.sh` |
 
