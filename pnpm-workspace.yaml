@@ -3,5 +3,6 @@ packages:
 # pnpm requires explicit approval to run dependency build scripts.
 # esbuild and sharp ship native binaries that need their install scripts.
 allowBuilds:
+  '@serialport/bindings-cpp': false
   esbuild: true
   sharp: true
