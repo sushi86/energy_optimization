@@ -88,6 +88,18 @@ export default function WallboxCard() {
     void refresh();
   };
 
+  // Keeps the slider pinned to the value the user chose until the write has been
+  // confirmed by the wallbox — otherwise it visibly snaps back to the stale value
+  // for the round-trip duration, then jumps to the new one once refresh() lands.
+  const commitCurrent = async (value: number) => {
+    setPendingCurrent(value);
+    try {
+      await postAction('current', { ampere: value });
+    } finally {
+      setPendingCurrent(null);
+    }
+  };
+
   if (error) {
     return (
       <div className="rounded-xl border border-[var(--border)] bg-[var(--bg-card)] p-5 mb-4">
@@ -168,8 +180,8 @@ export default function WallboxCard() {
           step={1}
           value={displayCurrent}
           onChange={(e) => setPendingCurrent(Number(e.target.value))}
-          onMouseUp={() => { if (pendingCurrent != null) void postAction('current', { ampere: pendingCurrent }); setPendingCurrent(null); }}
-          onTouchEnd={() => { if (pendingCurrent != null) void postAction('current', { ampere: pendingCurrent }); setPendingCurrent(null); }}
+          onMouseUp={() => { if (pendingCurrent != null) void commitCurrent(pendingCurrent); }}
+          onTouchEnd={() => { if (pendingCurrent != null) void commitCurrent(pendingCurrent); }}
           className="flex-1 accent-[var(--accent)] h-1.5"
         />
         <span className="text-sm font-semibold tabular-nums w-14 text-right">{displayCurrent.toFixed(0)} A</span>
