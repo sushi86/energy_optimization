@@ -12,6 +12,7 @@ import type { InexogyService } from './inexogy-service.js';
 import type { GridHistoryService } from './grid-history-service.js';
 import type { NibePoller } from './nibe-poller.js';
 import type { WallboxClient } from './wallbox/WallboxClient.js';
+import { MAX_CHARGING_CURRENT_A, MIN_CHARGING_CURRENT_A } from './wallbox/types.js';
 import type { PushService } from './push-service.js';
 import { energyEvents } from './energy-events.js';
 import { getVapidPublicKey } from './vapid.js';
@@ -760,11 +761,14 @@ export function buildServer(options: ServerOptions = {}): FastifyInstance {
   app.post('/api/wallbox/current', async (request, reply) => {
     if (!wallboxClient) return reply.code(503).send({ error: 'Wallbox not configured' });
     const { ampere } = request.body as { ampere: number };
+    if (ampere < MIN_CHARGING_CURRENT_A || ampere > MAX_CHARGING_CURRENT_A) {
+      return reply.code(400).send({ error: `Charging current must be between ${MIN_CHARGING_CURRENT_A} and ${MAX_CHARGING_CURRENT_A}A, got ${ampere}` });
+    }
     try {
       await wallboxClient.setChargingCurrent(ampere);
       return { ok: true };
     } catch (err) {
-      return reply.code(400).send({ error: (err as Error).message });
+      return reply.code(502).send({ error: (err as Error).message });
     }
   });
 

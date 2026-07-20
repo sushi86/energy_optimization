@@ -65,6 +65,13 @@ describe('wallbox routes', () => {
     expect(res.statusCode).toBe(400);
   });
 
+  it('POST /api/wallbox/current returns 502 when Modbus write fails', async () => {
+    mockWriteRegisters.mockRejectedValueOnce(new Error('ECONNRESET'));
+    const res = await app.inject({ method: 'POST', url: '/api/wallbox/current', payload: { ampere: 10 } });
+    expect(res.statusCode).toBe(502);
+    expect(res.json().error).toBe('ECONNRESET');
+  });
+
   it('POST /api/wallbox/phases sets phases', async () => {
     const res = await app.inject({ method: 'POST', url: '/api/wallbox/phases', payload: { phases: 1 } });
     expect(res.statusCode).toBe(200);
