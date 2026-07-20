@@ -135,6 +135,15 @@ export class WallboxClient {
     await this.client.writeRegisters(EM2GO_REGISTERS.phases, [phases]);
   }
 
+  startPolling(intervalMs: number, callback: (state: WallboxState) => void): void {
+    this.stopPolling();
+    this.pollTimer = setInterval(() => {
+      this.getState()
+        .then(callback)
+        .catch((err) => console.error('[wallbox] Poll error:', (err as Error).message));
+    }, intervalMs);
+  }
+
   stopPolling(): void {
     if (this.pollTimer) {
       clearInterval(this.pollTimer);

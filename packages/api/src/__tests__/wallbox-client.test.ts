@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeEach, vi } from 'vitest';
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 
 const mockConnectTCP = vi.fn().mockResolvedValue(undefined);
 const mockSetID = vi.fn();
@@ -214,5 +214,62 @@ describe('WallboxClient control methods', () => {
 
     await client.setPhases(3);
     expect(mockWriteRegisters).toHaveBeenCalledWith(EM2GO_REGISTERS.phases, [3]);
+  });
+});
+
+describe('WallboxClient polling', () => {
+  let client: InstanceType<typeof WallboxClient>;
+
+  beforeEach(async () => {
+    vi.clearAllMocks();
+    vi.useFakeTimers();
+    client = createWallboxClient({ host: '192.168.1.254', port: 502, unitId: 255 });
+    await client.connect();
+  });
+
+  afterEach(() => {
+    client.stopPolling();
+    vi.useRealTimers();
+  });
+
+  it('calls the callback with state on each interval tick', async () => {
+    mockReadHoldingRegisters.mockResolvedValue(regResponse([4]));
+    const callback = vi.fn();
+
+    client.startPolling(5000, callback);
+    await vi.advanceTimersByTimeAsync(5000);
+
+    expect(callback).toHaveBeenCalledTimes(1);
+    expect(callback.mock.calls[0][0].rawStatus).toBe(4);
+  });
+
+  it('logs and continues polling when a poll fails', async () => {
+    const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+    mockReadHoldingRegisters.mockRejectedValueOnce(new Error('ECONNRESET'));
+    mockReadHoldingRegisters.mockResolvedValue(regResponse([4]));
+    const callback = vi.fn();
+
+    client.startPolling(5000, callback);
+    await vi.advanceTimersByTimeAsync(5000);
+    expect(callback).not.toHaveBeenCalled();
+    expect(errorSpy).toHaveBeenCalledWith('[wallbox] Poll error:', 'ECONNRESET');
+
+    await vi.advanceTimersByTimeAsync(5000);
+    expect(callback).toHaveBeenCalledTimes(1);
+
+    errorSpy.mockRestore();
+  });
+
+  it('stopPolling stops further callbacks', async () => {
+    mockReadHoldingRegisters.mockResolvedValue(regResponse([4]));
+    const callback = vi.fn();
+
+    client.startPolling(5000, callback);
+    await vi.advanceTimersByTimeAsync(5000);
+    expect(callback).toHaveBeenCalledTimes(1);
+
+    client.stopPolling();
+    await vi.advanceTimersByTimeAsync(15000);
+    expect(callback).toHaveBeenCalledTimes(1);
   });
 });
