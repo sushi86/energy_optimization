@@ -731,6 +731,10 @@ export function buildServer(options: ServerOptions = {}): FastifyInstance {
 
   app.get('/api/wallbox/status', async (_request, reply) => {
     if (!wallboxClient) return reply.code(503).send({ error: 'Wallbox not configured' });
+    // Serve the background poller's cache instead of issuing a fresh Modbus read per
+    // request — the wallbox's Modbus TCP stack can't handle concurrent request streams.
+    const cached = wallboxClient.getLastState();
+    if (cached) return cached;
     try {
       return await wallboxClient.getState();
     } catch (err) {

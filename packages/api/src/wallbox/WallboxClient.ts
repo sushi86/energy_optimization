@@ -23,19 +23,42 @@ function statusFromRaw(raw: number): WallboxStatus {
   }
 }
 
+function sleep(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+// EM2GO's Modbus TCP stack cannot handle overlapping requests on one connection —
+// concurrent access (e.g. the background poller and an HTTP-triggered read racing)
+// causes a request to hang forever with no error. All requests are serialized through
+// this connection and given a hard response timeout so a stuck transaction can never
+// wedge every future call.
+const RESPONSE_TIMEOUT_MS = 5000;
+const INTER_REQUEST_DELAY_MS = 60;
+
 export class WallboxClient {
   private readonly client = new ModbusRTU();
   private readonly config: WallboxConfig;
   private pollTimer: ReturnType<typeof setInterval> | null = null;
   private lastState: WallboxState | null = null;
+  private queue: Promise<unknown> = Promise.resolve();
 
   constructor(config: WallboxConfig) {
     this.config = config;
   }
 
+  private withLock<T>(fn: () => Promise<T>): Promise<T> {
+    const run = this.queue.then(fn, fn);
+    this.queue = run.then(
+      () => undefined,
+      () => undefined,
+    );
+    return run;
+  }
+
   async connect(): Promise<void> {
     await this.client.connectTCP(this.config.host, { port: this.config.port });
     this.client.setID(this.config.unitId);
+    this.client.setTimeout(RESPONSE_TIMEOUT_MS);
   }
 
   async disconnect(): Promise<void> {
@@ -44,11 +67,13 @@ export class WallboxClient {
   }
 
   private async readU16(reg: number): Promise<number> {
+    await sleep(INTER_REQUEST_DELAY_MS);
     const res = await this.client.readHoldingRegisters(reg, 1);
     return res.data[0];
   }
 
   private async readU32(reg: number): Promise<number> {
+    await sleep(INTER_REQUEST_DELAY_MS);
     const res = await this.client.readHoldingRegisters(reg, 2);
     return ((res.data[0] << 16) | res.data[1]) >>> 0;
   }
@@ -61,11 +86,16 @@ export class WallboxClient {
   }
 
   private async readSerial(): Promise<string> {
+    await sleep(INTER_REQUEST_DELAY_MS);
     const res = await this.client.readHoldingRegisters(EM2GO_REGISTERS.serial, 16);
     return String.fromCharCode(...res.data).replace(/\0/g, '').trim();
   }
 
   async getState(): Promise<WallboxState> {
+    return this.withLock(() => this.readState());
+  }
+
+  private async readState(): Promise<WallboxState> {
     const rawStatus = await this.readU16(EM2GO_REGISTERS.status);
     const connectorState = await this.readU16(EM2GO_REGISTERS.connectorState);
     const errorCode = await this.readU16(EM2GO_REGISTERS.errorCode);
@@ -115,11 +145,11 @@ export class WallboxClient {
   }
 
   async startCharging(): Promise<void> {
-    await this.client.writeRegisters(EM2GO_REGISTERS.chargeCommand, [1]);
+    await this.withLock(() => this.client.writeRegisters(EM2GO_REGISTERS.chargeCommand, [1]));
   }
 
   async stopCharging(): Promise<void> {
-    await this.client.writeRegisters(EM2GO_REGISTERS.chargeCommand, [2]);
+    await this.withLock(() => this.client.writeRegisters(EM2GO_REGISTERS.chargeCommand, [2]));
   }
 
   async setChargingCurrent(ampere: number): Promise<void> {
@@ -128,11 +158,11 @@ export class WallboxClient {
         `Charging current must be between ${MIN_CHARGING_CURRENT_A} and ${MAX_CHARGING_CURRENT_A}A, got ${ampere}`,
       );
     }
-    await this.client.writeRegisters(EM2GO_REGISTERS.currentLimit, [Math.round(ampere * 10)]);
+    await this.withLock(() => this.client.writeRegisters(EM2GO_REGISTERS.currentLimit, [Math.round(ampere * 10)]));
   }
 
   async setPhases(phases: 1 | 3): Promise<void> {
-    await this.client.writeRegisters(EM2GO_REGISTERS.phases, [phases]);
+    await this.withLock(() => this.client.writeRegisters(EM2GO_REGISTERS.phases, [phases]));
   }
 
   startPolling(intervalMs: number, callback: (state: WallboxState) => void): void {

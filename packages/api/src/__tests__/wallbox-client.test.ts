@@ -2,6 +2,7 @@ import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 
 const mockConnectTCP = vi.fn().mockResolvedValue(undefined);
 const mockSetID = vi.fn();
+const mockSetTimeout = vi.fn();
 const mockClose = vi.fn((cb: () => void) => cb());
 const mockReadHoldingRegisters = vi.fn();
 const mockWriteRegisters = vi.fn().mockResolvedValue(undefined);
@@ -10,6 +11,7 @@ vi.mock('modbus-serial', () => ({
   default: vi.fn().mockImplementation(() => ({
     connectTCP: mockConnectTCP,
     setID: mockSetID,
+    setTimeout: mockSetTimeout,
     close: mockClose,
     readHoldingRegisters: mockReadHoldingRegisters,
     writeRegisters: mockWriteRegisters,
@@ -220,6 +222,12 @@ describe('WallboxClient control methods', () => {
 describe('WallboxClient polling', () => {
   let client: InstanceType<typeof WallboxClient>;
 
+  // Each getState() now sleeps INTER_REQUEST_DELAY_MS before every register read
+  // (~21 reads), so a tick needs the 5000ms interval plus headroom for that chain
+  // to fully settle before the callback fires.
+  const TICK_MS = 5000;
+  const SETTLE_MS = 2000;
+
   beforeEach(async () => {
     vi.clearAllMocks();
     vi.useFakeTimers();
@@ -236,8 +244,8 @@ describe('WallboxClient polling', () => {
     mockReadHoldingRegisters.mockResolvedValue(regResponse([4]));
     const callback = vi.fn();
 
-    client.startPolling(5000, callback);
-    await vi.advanceTimersByTimeAsync(5000);
+    client.startPolling(TICK_MS, callback);
+    await vi.advanceTimersByTimeAsync(TICK_MS + SETTLE_MS);
 
     expect(callback).toHaveBeenCalledTimes(1);
     expect(callback.mock.calls[0][0].rawStatus).toBe(4);
@@ -249,12 +257,12 @@ describe('WallboxClient polling', () => {
     mockReadHoldingRegisters.mockResolvedValue(regResponse([4]));
     const callback = vi.fn();
 
-    client.startPolling(5000, callback);
-    await vi.advanceTimersByTimeAsync(5000);
+    client.startPolling(TICK_MS, callback);
+    await vi.advanceTimersByTimeAsync(TICK_MS + SETTLE_MS);
     expect(callback).not.toHaveBeenCalled();
     expect(errorSpy).toHaveBeenCalledWith('[wallbox] Poll error:', 'ECONNRESET');
 
-    await vi.advanceTimersByTimeAsync(5000);
+    await vi.advanceTimersByTimeAsync(TICK_MS + SETTLE_MS);
     expect(callback).toHaveBeenCalledTimes(1);
 
     errorSpy.mockRestore();
@@ -264,12 +272,12 @@ describe('WallboxClient polling', () => {
     mockReadHoldingRegisters.mockResolvedValue(regResponse([4]));
     const callback = vi.fn();
 
-    client.startPolling(5000, callback);
-    await vi.advanceTimersByTimeAsync(5000);
+    client.startPolling(TICK_MS, callback);
+    await vi.advanceTimersByTimeAsync(TICK_MS + SETTLE_MS);
     expect(callback).toHaveBeenCalledTimes(1);
 
     client.stopPolling();
-    await vi.advanceTimersByTimeAsync(15000);
+    await vi.advanceTimersByTimeAsync(3 * TICK_MS);
     expect(callback).toHaveBeenCalledTimes(1);
   });
 });

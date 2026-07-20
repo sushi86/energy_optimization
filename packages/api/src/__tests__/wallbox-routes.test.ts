@@ -3,6 +3,7 @@ import type { FastifyInstance } from 'fastify';
 
 const mockConnectTCP = vi.fn().mockResolvedValue(undefined);
 const mockSetID = vi.fn();
+const mockSetTimeout = vi.fn();
 const mockClose = vi.fn((cb: () => void) => cb());
 const mockReadHoldingRegisters = vi.fn();
 const mockWriteRegisters = vi.fn().mockResolvedValue(undefined);
@@ -11,6 +12,7 @@ vi.mock('modbus-serial', () => ({
   default: vi.fn().mockImplementation(() => ({
     connectTCP: mockConnectTCP,
     setID: mockSetID,
+    setTimeout: mockSetTimeout,
     close: mockClose,
     readHoldingRegisters: mockReadHoldingRegisters,
     writeRegisters: mockWriteRegisters,
