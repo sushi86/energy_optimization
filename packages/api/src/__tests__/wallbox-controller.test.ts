@@ -212,7 +212,7 @@ describe('WallboxController', () => {
       await ctrl.tick({ pvPower: 1800, consumptionPower: 500 }, state, client, t0); // surplus 1300
       await ctrl.tick({ pvPower: 1800, consumptionPower: 500 }, state, client, t0 + TOLERANCE_MS);
       expect(client.startCharging).not.toHaveBeenCalled();
-      expect(ctrl.getLastDetails()).toEqual({ surplusW: 1300, targetCurrentA: null, reason: 'Zu wenig Überschuss (1300 W, benötigt 1380 W)' });
+      expect(ctrl.getLastDetails()).toEqual({ surplusW: 1300, targetCurrentA: null, reason: 'Zu wenig Überschuss (1300 W, benötigt 1380 W)', startAttempts: 0, pendingStart: false, rejected: false });
     });
 
     it('startup countdown names the 1-phase target when surplus is mid-range', async () => {
@@ -223,7 +223,7 @@ describe('WallboxController', () => {
       const t0 = 1_000_000;
       await ctrl.tick({ pvPower: 3000, consumptionPower: 500 }, state, client, t0);
       await ctrl.tick({ pvPower: 3000, consumptionPower: 500 }, state, client, t0 + 30_000);
-      expect(ctrl.getLastDetails()).toEqual({ surplusW: 2500, targetCurrentA: null, reason: 'Ausreichend Überschuss (1-phasig) seit 30s — startet nach 120s' });
+      expect(ctrl.getLastDetails()).toEqual({ surplusW: 2500, targetCurrentA: null, reason: 'Ausreichend Überschuss (1-phasig) seit 30s — startet nach 120s', startAttempts: 0, pendingStart: false, rejected: false });
     });
   });
 
@@ -297,6 +297,9 @@ describe('WallboxController', () => {
         surplusW: 5000,
         targetCurrentA: 7,
         reason: 'Lädt 3-phasig mit 7 A (Überschuss 5000 W)',
+        startAttempts: 0,
+        pendingStart: false,
+        rejected: false,
       });
     });
   });
@@ -368,7 +371,7 @@ describe('WallboxController', () => {
       await ctrl.tick({ pvPower: 3500, consumptionPower: 500 }, state, client, t0 + TOLERANCE_MS);
       expect(client.setPhases).not.toHaveBeenCalled();
       expect(client.setChargingCurrent).toHaveBeenCalledWith(13); // floor(3000 / 230) = 13
-      expect(ctrl.getLastDetails()).toEqual({ surplusW: 3000, targetCurrentA: 13, reason: 'Lädt 1-phasig mit 13 A (Überschuss 3000 W)' });
+      expect(ctrl.getLastDetails()).toEqual({ surplusW: 3000, targetCurrentA: 13, reason: 'Lädt 1-phasig mit 13 A (Überschuss 3000 W)', startAttempts: 0, pendingStart: false, rejected: false });
     });
 
     it('reports the switch-up countdown while the timer runs', async () => {
@@ -379,7 +382,7 @@ describe('WallboxController', () => {
       const t0 = 1_000_000;
       await ctrl.tick({ pvPower: 6500, consumptionPower: 500 }, state, client, t0);
       await ctrl.tick({ pvPower: 6500, consumptionPower: 500 }, state, client, t0 + 45_000);
-      expect(ctrl.getLastDetails()).toEqual({ surplusW: 6000, targetCurrentA: null, reason: 'Überschuss reicht für 3-phasig seit 45s — schaltet um nach 120s' });
+      expect(ctrl.getLastDetails()).toEqual({ surplusW: 6000, targetCurrentA: null, reason: 'Überschuss reicht für 3-phasig seit 45s — schaltet um nach 120s', startAttempts: 0, pendingStart: false, rejected: false });
     });
 
     it('reports the switch-down countdown while the timer runs', async () => {
@@ -390,7 +393,7 @@ describe('WallboxController', () => {
       const t0 = 1_000_000;
       await ctrl.tick({ pvPower: 3500, consumptionPower: 500 }, state, client, t0);
       await ctrl.tick({ pvPower: 3500, consumptionPower: 500 }, state, client, t0 + 30_000);
-      expect(ctrl.getLastDetails()).toEqual({ surplusW: 3000, targetCurrentA: null, reason: 'Überschuss reicht nur für 1-phasig seit 30s — schaltet um nach 120s' });
+      expect(ctrl.getLastDetails()).toEqual({ surplusW: 3000, targetCurrentA: null, reason: 'Überschuss reicht nur für 1-phasig seit 30s — schaltet um nach 120s', startAttempts: 0, pendingStart: false, rejected: false });
     });
 
     it('stops from 1-phase charging when surplus stays below 1380 W for the tolerance window', async () => {
@@ -488,6 +491,9 @@ describe('WallboxController', () => {
         surplusW: 6000,
         targetCurrentA: 8,
         reason: 'Lädt 3-phasig mit 8 A (Überschuss 6000 W)',
+        startAttempts: 0,
+        pendingStart: false,
+        rejected: false,
       });
     });
 
@@ -520,7 +526,7 @@ describe('WallboxController', () => {
       const client = makeClient();
       const state = makeState({ status: 'charging', chargingCurrentA: 8 });
       await ctrl.tick({ pvPower: 6500, consumptionPower: 500 }, state, client, 1_000_000);
-      expect(ctrl.getLastDetails()).toEqual({ surplusW: 6000, targetCurrentA: 8, reason: 'Lädt 3-phasig mit 8 A (Überschuss 6000 W)' });
+      expect(ctrl.getLastDetails()).toEqual({ surplusW: 6000, targetCurrentA: 8, reason: 'Lädt 3-phasig mit 8 A (Überschuss 6000 W)', startAttempts: 0, pendingStart: false, rejected: false });
     });
 
     it('reports the countdown while charging with insufficient surplus', async () => {
@@ -531,7 +537,7 @@ describe('WallboxController', () => {
       const t0 = 1_000_000;
       await ctrl.tick({ pvPower: 1000, consumptionPower: 500 }, state, client, t0);
       await ctrl.tick({ pvPower: 1000, consumptionPower: 500 }, state, client, t0 + 45_000);
-      expect(ctrl.getLastDetails()).toEqual({ surplusW: 500, targetCurrentA: null, reason: 'Überschuss unzureichend seit 45s — stoppt nach 120s' });
+      expect(ctrl.getLastDetails()).toEqual({ surplusW: 500, targetCurrentA: null, reason: 'Überschuss unzureichend seit 45s — stoppt nach 120s', startAttempts: 0, pendingStart: false, rejected: false });
     });
 
     it('reports "Kein Fahrzeug verbunden" when not charging and no vehicle connected', async () => {
@@ -540,7 +546,7 @@ describe('WallboxController', () => {
       const client = makeClient();
       const state = makeState({ status: 'available', vehicleConnected: false });
       await ctrl.tick({ pvPower: 8000, consumptionPower: 500 }, state, client, 1_000_000);
-      expect(ctrl.getLastDetails()).toEqual({ surplusW: 7500, targetCurrentA: null, reason: 'Kein Fahrzeug verbunden' });
+      expect(ctrl.getLastDetails()).toEqual({ surplusW: 7500, targetCurrentA: null, reason: 'Kein Fahrzeug verbunden', startAttempts: 0, pendingStart: false, rejected: false });
     });
 
     it('reports the startup countdown while not charging with sufficient surplus', async () => {
@@ -551,7 +557,7 @@ describe('WallboxController', () => {
       const t0 = 1_000_000;
       await ctrl.tick({ pvPower: 5500, consumptionPower: 500 }, state, client, t0);
       await ctrl.tick({ pvPower: 5500, consumptionPower: 500 }, state, client, t0 + 30_000);
-      expect(ctrl.getLastDetails()).toEqual({ surplusW: 5000, targetCurrentA: null, reason: 'Ausreichend Überschuss (3-phasig) seit 30s — startet nach 120s' });
+      expect(ctrl.getLastDetails()).toEqual({ surplusW: 5000, targetCurrentA: null, reason: 'Ausreichend Überschuss (3-phasig) seit 30s — startet nach 120s', startAttempts: 0, pendingStart: false, rejected: false });
     });
 
     it('reports insufficient surplus with required-power figure while not charging', async () => {
@@ -560,7 +566,7 @@ describe('WallboxController', () => {
       const client = makeClient();
       const state = makeState({ status: 'available' });
       await ctrl.tick({ pvPower: 1000, consumptionPower: 500 }, state, client, 1_000_000);
-      expect(ctrl.getLastDetails()).toEqual({ surplusW: 500, targetCurrentA: null, reason: 'Zu wenig Überschuss (500 W, benötigt 1380 W)' });
+      expect(ctrl.getLastDetails()).toEqual({ surplusW: 500, targetCurrentA: null, reason: 'Zu wenig Überschuss (500 W, benötigt 1380 W)', startAttempts: 0, pendingStart: false, rejected: false });
     });
 
     it('reports "Warte auf Wallbox-Daten" when wallboxState is null', async () => {
@@ -568,7 +574,7 @@ describe('WallboxController', () => {
       ctrl.setMode('pv');
       const client = makeClient();
       await ctrl.tick({ pvPower: 8000, consumptionPower: 500 }, null, client, 1_000_000);
-      expect(ctrl.getLastDetails()).toEqual({ surplusW: 7500, targetCurrentA: null, reason: 'Warte auf Wallbox-Daten' });
+      expect(ctrl.getLastDetails()).toEqual({ surplusW: 7500, targetCurrentA: null, reason: 'Warte auf Wallbox-Daten', startAttempts: 0, pendingStart: false, rejected: false });
     });
   });
 
@@ -599,6 +605,9 @@ describe('WallboxController', () => {
         surplusW: 10500,
         targetCurrentA: 15,
         reason: 'Lädt 3-phasig mit 15 A (Überschuss 10500 W) — AC-Limit aktiv',
+        startAttempts: 0,
+        pendingStart: false,
+        rejected: false,
       });
     });
 
@@ -616,6 +625,9 @@ describe('WallboxController', () => {
         surplusW: 1000,
         targetCurrentA: null,
         reason: 'Zu wenig Überschuss (1000 W, benötigt 1380 W) — AC-Limit aktiv',
+        startAttempts: 0,
+        pendingStart: false,
+        rejected: false,
       });
     });
 

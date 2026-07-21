@@ -20,6 +20,9 @@ export interface WallboxControllerDetails {
   surplusW: number;
   targetCurrentA: number | null;
   reason: string;
+  startAttempts: number;
+  pendingStart: boolean;
+  rejected: boolean;
 }
 
 const VOLTAGE_V = 230;
@@ -44,6 +47,9 @@ export class WallboxController {
   private switchDownSince: number | null = null;
   private lastDetails: WallboxControllerDetails | null = null;
   private startNotifiedPending = false;
+  private startAttempts = 0;
+  private pendingStart = false;
+  private rejected = false;
 
   constructor(config: WallboxControllerDeps) {
     this.config = config;
@@ -67,6 +73,9 @@ export class WallboxController {
     this.switchUpSince = null;
     this.switchDownSince = null;
     this.startNotifiedPending = false;
+    this.startAttempts = 0;
+    this.pendingStart = false;
+    this.rejected = false;
   }
 
   updateConfig(partial: Partial<WallboxControllerDeps>): void {
@@ -142,7 +151,7 @@ export class WallboxController {
       this.switchUpSince = null;
       this.switchDownSince = null;
       const surplusW = systemState.pvPower - systemState.consumptionPower;
-      this.lastDetails = { surplusW: Math.round(surplusW), targetCurrentA: null, reason: 'Warte auf Wallbox-Daten' };
+      this.lastDetails = { surplusW: Math.round(surplusW), targetCurrentA: null, reason: 'Warte auf Wallbox-Daten', startAttempts: this.startAttempts, pendingStart: this.pendingStart, rejected: this.rejected };
       return;
     }
 
@@ -179,6 +188,9 @@ export class WallboxController {
           surplusW: Math.round(availableW),
           targetCurrentA: null,
           reason: `Überschuss unzureichend seit ${elapsedS}s — stoppt nach ${toleranceS}s${capSuffix}`,
+          startAttempts: this.startAttempts,
+          pendingStart: this.pendingStart,
+          rejected: this.rejected,
         };
       } else if (phases === 1 && availableW >= SWITCH_UP_W) {
         this.insufficientSince = null;
@@ -196,6 +208,9 @@ export class WallboxController {
           surplusW: Math.round(availableW),
           targetCurrentA: null,
           reason: `Überschuss reicht für 3-phasig seit ${elapsedS}s — schaltet um nach ${toleranceS}s${capSuffix}`,
+          startAttempts: this.startAttempts,
+          pendingStart: this.pendingStart,
+          rejected: this.rejected,
         };
       } else if (phases === 3 && availableW < MIN_POWER_3P_W) {
         this.insufficientSince = null;
@@ -213,6 +228,9 @@ export class WallboxController {
           surplusW: Math.round(availableW),
           targetCurrentA: null,
           reason: `Überschuss reicht nur für 1-phasig seit ${elapsedS}s — schaltet um nach ${toleranceS}s${capSuffix}`,
+          startAttempts: this.startAttempts,
+          pendingStart: this.pendingStart,
+          rejected: this.rejected,
         };
       } else {
         this.insufficientSince = null;
@@ -226,6 +244,9 @@ export class WallboxController {
           surplusW: Math.round(availableW),
           targetCurrentA: targetA,
           reason: `Lädt ${phases}-phasig mit ${targetA} A (Überschuss ${Math.round(availableW)} W)${capSuffix}`,
+          startAttempts: this.startAttempts,
+          pendingStart: this.pendingStart,
+          rejected: this.rejected,
         };
       }
     } else {
@@ -235,7 +256,7 @@ export class WallboxController {
       if (!wallboxState.vehicleConnected) {
         this.sufficientSince = null;
         this.startNotifiedPending = false;
-        this.lastDetails = { surplusW: Math.round(surplusW), targetCurrentA: null, reason: 'Kein Fahrzeug verbunden' };
+        this.lastDetails = { surplusW: Math.round(surplusW), targetCurrentA: null, reason: 'Kein Fahrzeug verbunden', startAttempts: this.startAttempts, pendingStart: this.pendingStart, rejected: this.rejected };
         return;
       }
       if (availableW >= MIN_POWER_1P_W) {
@@ -263,6 +284,9 @@ export class WallboxController {
           surplusW: Math.round(availableW),
           targetCurrentA: null,
           reason: `Ausreichend Überschuss (${startPhases}-phasig) seit ${elapsedS}s — startet nach ${toleranceS}s${capSuffix}`,
+          startAttempts: this.startAttempts,
+          pendingStart: this.pendingStart,
+          rejected: this.rejected,
         };
       } else {
         this.sufficientSince = null;
@@ -270,6 +294,9 @@ export class WallboxController {
           surplusW: Math.round(availableW),
           targetCurrentA: null,
           reason: `Zu wenig Überschuss (${Math.round(availableW)} W, benötigt ${MIN_POWER_1P_W} W)${capSuffix}`,
+          startAttempts: this.startAttempts,
+          pendingStart: this.pendingStart,
+          rejected: this.rejected,
         };
       }
     }
