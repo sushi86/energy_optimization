@@ -803,6 +803,43 @@ describe('WallboxController', () => {
       await ctrl.tick({ pvPower: 5500, consumptionPower: 500 }, state, client, t0 + 8 * TOLERANCE_MS);
       expect(client.startCharging.mock.calls.length).toBe(callsBeforeReset + 1);
     });
+
+    it('emits wallbox:charging-started again after resetRejected() and a fresh start attempt', async () => {
+      const started: unknown[] = [];
+      energyEvents.on('wallbox:charging-started', ((e: unknown) => started.push(e)) as never);
+      try {
+        const ctrl = makeController();
+        ctrl.setMode('pv');
+        const client = makeClient();
+        const state = makeState({ status: 'available' });
+        const t0 = 1_000_000;
+        // Same 7-tick cadence as the earlier tests to reach rejected === true.
+        // The very first attempt already emits charging-started optimistically
+        // (the event fires when startCharging() is issued, not when 'charging'
+        // is later confirmed) — attempts 2 and 3 are deduped by startNotifiedPending.
+        await ctrl.tick({ pvPower: 5500, consumptionPower: 500 }, state, client, t0);
+        await ctrl.tick({ pvPower: 5500, consumptionPower: 500 }, state, client, t0 + TOLERANCE_MS); // attempt 1 fires → started[0]
+        await ctrl.tick({ pvPower: 5500, consumptionPower: 500 }, state, client, t0 + 2 * TOLERANCE_MS);
+        await ctrl.tick({ pvPower: 5500, consumptionPower: 500 }, state, client, t0 + 3 * TOLERANCE_MS); // attempt 2 fires
+        await ctrl.tick({ pvPower: 5500, consumptionPower: 500 }, state, client, t0 + 4 * TOLERANCE_MS);
+        await ctrl.tick({ pvPower: 5500, consumptionPower: 500 }, state, client, t0 + 5 * TOLERANCE_MS); // attempt 3 fires
+        await ctrl.tick({ pvPower: 5500, consumptionPower: 500 }, state, client, t0 + 6 * TOLERANCE_MS); // resolves 3 (fail) → rejected
+        expect(ctrl.getLastDetails()?.rejected).toBe(true);
+        expect(started).toHaveLength(1); // only the very first attempt notified
+
+        ctrl.resetRejected();
+
+        // Next tick re-arms the timer; the one after that fires the retried attempt.
+        // Without resetting startNotifiedPending, this attempt would be silently
+        // deduped and never notify, even though it's a genuinely new charging session.
+        await ctrl.tick({ pvPower: 5500, consumptionPower: 500 }, state, client, t0 + 7 * TOLERANCE_MS);
+        await ctrl.tick({ pvPower: 5500, consumptionPower: 500 }, state, client, t0 + 8 * TOLERANCE_MS);
+
+        expect(started).toHaveLength(2);
+      } finally {
+        energyEvents.removeAllListeners('wallbox:charging-started');
+      }
+    });
   });
 
   describe('pv mode — event emissions', () => {

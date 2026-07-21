@@ -67,6 +67,7 @@ export class WallboxController {
   resetRejected(): void {
     this.rejected = false;
     this.startAttempts = 0;
+    this.startNotifiedPending = false;
   }
 
   setMode(mode: WallboxControllerMode): void {
