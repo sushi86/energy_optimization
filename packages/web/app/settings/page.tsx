@@ -477,26 +477,26 @@ export default function SettingsPage() {
         </div>
       </div>
 
-      {/* Multiplus Rated Power */}
+      {/* Wallbox AC Reserve */}
       <div className="rounded-xl border border-[var(--border)] bg-[var(--bg-card)] p-5 mb-6">
         <div className="flex items-center justify-between">
           <div>
-            <p className="text-sm font-medium text-[var(--text-primary)]">Multiplus Dauerlast</p>
+            <p className="text-sm font-medium text-[var(--text-primary)]">Wallbox-Lastreserve</p>
             <p className="text-xs text-[var(--text-secondary)] mt-1">
-              Maximale Dauerleistung pro Phase für die Auslastungsanzeige.
+              Sicherheitsabstand unter dem AC-Limit (maxAcPowerW), den das PV-Überschussladen nie antastet.
             </p>
           </div>
           <div className="flex items-center gap-2">
             <input
               type="number"
-              step={500}
-              value={Number(config?.multiplusRatedPowerW ?? 4000)}
-              onChange={(e) => updateConfigField('multiplusRatedPowerW', e.target.value)}
-              onBlur={(e) => flushConfigField('multiplusRatedPowerW', e.target.value)}
+              step={100}
+              value={Number(config?.wallboxAcReserveW ?? 1000)}
+              onChange={(e) => updateConfigField('wallboxAcReserveW', e.target.value)}
+              onBlur={(e) => flushConfigField('wallboxAcReserveW', e.target.value)}
               className="w-24 rounded-lg border border-[var(--border)] bg-[var(--bg-primary)] px-3 py-2 text-sm text-[var(--text-primary)] text-right focus:outline-none focus:border-[var(--accent)]"
             />
             <span className="text-sm text-[var(--text-secondary)]">W</span>
-            <SavedTick visible={!!savedFlash.multiplusRatedPowerW} />
+            <SavedTick visible={!!savedFlash.wallboxAcReserveW} />
           </div>
         </div>
       </div>
@@ -629,7 +629,7 @@ export default function SettingsPage() {
           <p className="text-sm text-[var(--text-secondary)] mb-4">Konfiguration</p>
           <div className="space-y-3">
             {Object.entries(config).map(([key, value]) => {
-              if (typeof value === 'object' || typeof value === 'boolean' || key === 'feedInRateCentPerKwh' || key === 'preferredMaxChargeW' || key === 'consumptionDayW' || key === 'consumptionNightW' || key === 'multiplusRatedPowerW' || key === 'activeMorningDischargeMinSocPercent' || key === 'manualModeFloorPercent' || key === 'wallboxPvToleranceMinutes') return null;
+              if (typeof value === 'object' || typeof value === 'boolean' || key === 'feedInRateCentPerKwh' || key === 'preferredMaxChargeW' || key === 'consumptionDayW' || key === 'consumptionNightW' || key === 'wallboxAcReserveW' || key === 'activeMorningDischargeMinSocPercent' || key === 'manualModeFloorPercent' || key === 'wallboxPvToleranceMinutes') return null;
               return (
                 <div key={key} className="flex flex-col sm:flex-row sm:items-center gap-1 sm:gap-4">
                   <label className="text-sm text-[var(--text-secondary)] sm:w-48 shrink-0">
