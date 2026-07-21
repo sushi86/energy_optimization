@@ -5,6 +5,8 @@ export type WallboxControllerMode = 'off' | 'pv' | 'manual';
 
 export interface WallboxControllerDeps {
   toleranceMs: number;
+  /** Obergrenze für Hauslast + Wallbox (maxAcPowerW − Reserve); PV-Laden bleibt darunter. */
+  acLoadCapW: number;
 }
 
 export interface WallboxControlClient {
@@ -148,6 +150,13 @@ export class WallboxController {
     // it back — otherwise charging collapses its own computed surplus (self-defeating loop).
     const surplusW = systemState.pvPower - systemState.consumptionPower + wallboxState.powerW;
 
+    // AC-Lastdeckel: Hauslast (ohne Wallbox) + Wallbox darf acLoadCapW nie übersteigen —
+    // sonst käme der Rest aus dem Netz. Alles Weitere rechnet mit dem Minimum aus
+    // PV-Überschuss und verbleibendem Deckel-Spielraum.
+    const otherConsumptionW = systemState.consumptionPower - wallboxState.powerW;
+    const availableW = Math.min(surplusW, this.config.acLoadCapW - otherConsumptionW);
+    const capSuffix = availableW < surplusW ? ' — AC-Limit aktiv' : '';
+
     const isCharging = wallboxState.status === 'charging';
 
     if (isCharging) {
@@ -156,7 +165,7 @@ export class WallboxController {
       const phases = wallboxState.phases;
       const toleranceS = Math.round(this.config.toleranceMs / 1000);
 
-      if (surplusW < MIN_POWER_1P_W) {
+      if (availableW < MIN_POWER_1P_W) {
         this.switchUpSince = null;
         this.switchDownSince = null;
         if (this.insufficientSince === null) this.insufficientSince = now;
@@ -164,59 +173,59 @@ export class WallboxController {
         if (client && now - this.insufficientSince >= this.config.toleranceMs) {
           await client.stopCharging();
           this.insufficientSince = null;
-          energyEvents.emit('wallbox:charging-stopped', { surplusW: Math.round(surplusW) });
+          energyEvents.emit('wallbox:charging-stopped', { surplusW: Math.round(availableW) });
         }
         this.lastDetails = {
-          surplusW: Math.round(surplusW),
+          surplusW: Math.round(availableW),
           targetCurrentA: null,
-          reason: `Überschuss unzureichend seit ${elapsedS}s — stoppt nach ${toleranceS}s`,
+          reason: `Überschuss unzureichend seit ${elapsedS}s — stoppt nach ${toleranceS}s${capSuffix}`,
         };
-      } else if (phases === 1 && surplusW >= SWITCH_UP_W) {
+      } else if (phases === 1 && availableW >= SWITCH_UP_W) {
         this.insufficientSince = null;
         this.switchDownSince = null;
         if (this.switchUpSince === null) this.switchUpSince = now;
         const elapsedS = Math.round((now - this.switchUpSince) / 1000);
         if (client && now - this.switchUpSince >= this.config.toleranceMs) {
-          const newCurrentA = targetCurrent(surplusW, 3);
+          const newCurrentA = targetCurrent(availableW, 3);
           await client.setPhases(3);
           await client.setChargingCurrent(newCurrentA);
           this.switchUpSince = null;
-          energyEvents.emit('wallbox:phases-switched', { from: 1, to: 3, currentA: newCurrentA, surplusW: Math.round(surplusW) });
+          energyEvents.emit('wallbox:phases-switched', { from: 1, to: 3, currentA: newCurrentA, surplusW: Math.round(availableW) });
         }
         this.lastDetails = {
-          surplusW: Math.round(surplusW),
+          surplusW: Math.round(availableW),
           targetCurrentA: null,
-          reason: `Überschuss reicht für 3-phasig seit ${elapsedS}s — schaltet um nach ${toleranceS}s`,
+          reason: `Überschuss reicht für 3-phasig seit ${elapsedS}s — schaltet um nach ${toleranceS}s${capSuffix}`,
         };
-      } else if (phases === 3 && surplusW < MIN_POWER_3P_W) {
+      } else if (phases === 3 && availableW < MIN_POWER_3P_W) {
         this.insufficientSince = null;
         this.switchUpSince = null;
         if (this.switchDownSince === null) this.switchDownSince = now;
         const elapsedS = Math.round((now - this.switchDownSince) / 1000);
         if (client && now - this.switchDownSince >= this.config.toleranceMs) {
-          const newCurrentA = targetCurrent(surplusW, 1);
+          const newCurrentA = targetCurrent(availableW, 1);
           await client.setPhases(1);
           await client.setChargingCurrent(newCurrentA);
           this.switchDownSince = null;
-          energyEvents.emit('wallbox:phases-switched', { from: 3, to: 1, currentA: newCurrentA, surplusW: Math.round(surplusW) });
+          energyEvents.emit('wallbox:phases-switched', { from: 3, to: 1, currentA: newCurrentA, surplusW: Math.round(availableW) });
         }
         this.lastDetails = {
-          surplusW: Math.round(surplusW),
+          surplusW: Math.round(availableW),
           targetCurrentA: null,
-          reason: `Überschuss reicht nur für 1-phasig seit ${elapsedS}s — schaltet um nach ${toleranceS}s`,
+          reason: `Überschuss reicht nur für 1-phasig seit ${elapsedS}s — schaltet um nach ${toleranceS}s${capSuffix}`,
         };
       } else {
         this.insufficientSince = null;
         this.switchUpSince = null;
         this.switchDownSince = null;
-        const targetA = targetCurrent(surplusW, phases);
+        const targetA = targetCurrent(availableW, phases);
         if (client && Math.round(wallboxState.chargingCurrentA) !== targetA) {
           await client.setChargingCurrent(targetA);
         }
         this.lastDetails = {
-          surplusW: Math.round(surplusW),
+          surplusW: Math.round(availableW),
           targetCurrentA: targetA,
-          reason: `Lädt ${phases}-phasig mit ${targetA} A (Überschuss ${Math.round(surplusW)} W)`,
+          reason: `Lädt ${phases}-phasig mit ${targetA} A (Überschuss ${Math.round(availableW)} W)${capSuffix}`,
         };
       }
     } else {
@@ -229,13 +238,13 @@ export class WallboxController {
         this.lastDetails = { surplusW: Math.round(surplusW), targetCurrentA: null, reason: 'Kein Fahrzeug verbunden' };
         return;
       }
-      if (surplusW >= MIN_POWER_1P_W) {
+      if (availableW >= MIN_POWER_1P_W) {
         if (this.sufficientSince === null) this.sufficientSince = now;
-        const startPhases: 1 | 3 = surplusW >= SWITCH_UP_W ? 3 : 1;
+        const startPhases: 1 | 3 = availableW >= SWITCH_UP_W ? 3 : 1;
         const elapsedS = Math.round((now - this.sufficientSince) / 1000);
         const toleranceS = Math.round(this.config.toleranceMs / 1000);
         if (client && now - this.sufficientSince >= this.config.toleranceMs) {
-          const startCurrentA = targetCurrent(surplusW, startPhases);
+          const startCurrentA = targetCurrent(availableW, startPhases);
           await client.setPhases(startPhases);
           await client.setChargingCurrent(startCurrentA);
           await client.startCharging();
@@ -245,21 +254,21 @@ export class WallboxController {
             energyEvents.emit('wallbox:charging-started', {
               phases: startPhases,
               currentA: startCurrentA,
-              surplusW: Math.round(surplusW),
+              surplusW: Math.round(availableW),
             });
           }
         }
         this.lastDetails = {
-          surplusW: Math.round(surplusW),
+          surplusW: Math.round(availableW),
           targetCurrentA: null,
-          reason: `Ausreichend Überschuss (${startPhases}-phasig) seit ${elapsedS}s — startet nach ${toleranceS}s`,
+          reason: `Ausreichend Überschuss (${startPhases}-phasig) seit ${elapsedS}s — startet nach ${toleranceS}s${capSuffix}`,
         };
       } else {
         this.sufficientSince = null;
         this.lastDetails = {
-          surplusW: Math.round(surplusW),
+          surplusW: Math.round(availableW),
           targetCurrentA: null,
-          reason: `Zu wenig Überschuss (${Math.round(surplusW)} W, benötigt ${MIN_POWER_1P_W} W)`,
+          reason: `Zu wenig Überschuss (${Math.round(availableW)} W, benötigt ${MIN_POWER_1P_W} W)${capSuffix}`,
         };
       }
     }

@@ -39,15 +39,20 @@ function makeClient() {
   };
 }
 
+// acLoadCapW hoch genug, dass der Deckel in Alt-Tests nie greift.
+function makeController(overrides: Partial<{ toleranceMs: number; acLoadCapW: number }> = {}) {
+  return new WallboxController({ toleranceMs: TOLERANCE_MS, acLoadCapW: 100_000, ...overrides });
+}
+
 describe('WallboxController', () => {
   describe('mode management', () => {
     it('starts in off mode', () => {
-      const ctrl = new WallboxController({ toleranceMs: TOLERANCE_MS });
+      const ctrl = makeController();
       expect(ctrl.getMode()).toBe('off');
     });
 
     it('setMode changes the mode', () => {
-      const ctrl = new WallboxController({ toleranceMs: TOLERANCE_MS });
+      const ctrl = makeController();
       ctrl.setMode('pv');
       expect(ctrl.getMode()).toBe('pv');
     });
@@ -55,14 +60,14 @@ describe('WallboxController', () => {
 
   describe('off mode', () => {
     it('stops charging if currently charging', async () => {
-      const ctrl = new WallboxController({ toleranceMs: TOLERANCE_MS });
+      const ctrl = makeController();
       const client = makeClient();
       await ctrl.tick({ pvPower: 0, consumptionPower: 0 }, makeState({ status: 'charging' }), client);
       expect(client.stopCharging).toHaveBeenCalledTimes(1);
     });
 
     it('does not call stopCharging if not charging (idempotent)', async () => {
-      const ctrl = new WallboxController({ toleranceMs: TOLERANCE_MS });
+      const ctrl = makeController();
       const client = makeClient();
       await ctrl.tick({ pvPower: 0, consumptionPower: 0 }, makeState({ status: 'available' }), client);
       expect(client.stopCharging).not.toHaveBeenCalled();
@@ -71,7 +76,7 @@ describe('WallboxController', () => {
 
   describe('manual mode', () => {
     it('never calls any client method', async () => {
-      const ctrl = new WallboxController({ toleranceMs: TOLERANCE_MS });
+      const ctrl = makeController();
       ctrl.setMode('manual');
       const client = makeClient();
       await ctrl.tick({ pvPower: 8000, consumptionPower: 500 }, makeState({ status: 'available' }), client);
@@ -84,7 +89,7 @@ describe('WallboxController', () => {
 
   describe('pv mode — no wallbox data yet', () => {
     it('is a safe no-op when wallboxState is null', async () => {
-      const ctrl = new WallboxController({ toleranceMs: TOLERANCE_MS });
+      const ctrl = makeController();
       ctrl.setMode('pv');
       const client = makeClient();
       await expect(ctrl.tick({ pvPower: 8000, consumptionPower: 500 }, null, client)).resolves.not.toThrow();
@@ -94,7 +99,7 @@ describe('WallboxController', () => {
 
   describe('pv mode — starting charge', () => {
     it('does not start immediately even with sufficient surplus (waits for tolerance)', async () => {
-      const ctrl = new WallboxController({ toleranceMs: TOLERANCE_MS });
+      const ctrl = makeController();
       ctrl.setMode('pv');
       const client = makeClient();
       const now = 1_000_000;
@@ -104,7 +109,7 @@ describe('WallboxController', () => {
     });
 
     it('starts charging after sufficient surplus persists for the full tolerance window', async () => {
-      const ctrl = new WallboxController({ toleranceMs: TOLERANCE_MS });
+      const ctrl = makeController();
       ctrl.setMode('pv');
       const client = makeClient();
       const state = makeState({ status: 'available' });
@@ -119,7 +124,7 @@ describe('WallboxController', () => {
     });
 
     it('resets the sufficient-timer if surplus drops below minimum before tolerance elapses', async () => {
-      const ctrl = new WallboxController({ toleranceMs: TOLERANCE_MS });
+      const ctrl = makeController();
       ctrl.setMode('pv');
       const client = makeClient();
       const state = makeState({ status: 'available' });
@@ -131,7 +136,7 @@ describe('WallboxController', () => {
     });
 
     it('does not start when no vehicle is connected, even with sufficient surplus', async () => {
-      const ctrl = new WallboxController({ toleranceMs: TOLERANCE_MS });
+      const ctrl = makeController();
       ctrl.setMode('pv');
       const client = makeClient();
       const state = makeState({ status: 'available', vehicleConnected: false });
@@ -142,7 +147,7 @@ describe('WallboxController', () => {
     });
 
     it('clamps the starting current to MAX_CHARGING_CURRENT_A (16)', async () => {
-      const ctrl = new WallboxController({ toleranceMs: TOLERANCE_MS });
+      const ctrl = makeController();
       ctrl.setMode('pv');
       const client = makeClient();
       const state = makeState({ status: 'available' });
@@ -156,7 +161,7 @@ describe('WallboxController', () => {
 
   describe('pv mode — start phase decision', () => {
     it('starts 1-phase when surplus is between 1380 and 4440 W', async () => {
-      const ctrl = new WallboxController({ toleranceMs: TOLERANCE_MS });
+      const ctrl = makeController();
       ctrl.setMode('pv');
       const client = makeClient();
       const state = makeState({ status: 'available' });
@@ -172,7 +177,7 @@ describe('WallboxController', () => {
     });
 
     it('starts 1-phase in the 4140–4440 W band (margin applies to the start decision)', async () => {
-      const ctrl = new WallboxController({ toleranceMs: TOLERANCE_MS });
+      const ctrl = makeController();
       ctrl.setMode('pv');
       const client = makeClient();
       const state = makeState({ status: 'available' });
@@ -186,7 +191,7 @@ describe('WallboxController', () => {
     });
 
     it('starts 3-phase at surplus >= 4440 W', async () => {
-      const ctrl = new WallboxController({ toleranceMs: TOLERANCE_MS });
+      const ctrl = makeController();
       ctrl.setMode('pv');
       const client = makeClient();
       const state = makeState({ status: 'available' });
@@ -199,7 +204,7 @@ describe('WallboxController', () => {
     });
 
     it('does not start below 1380 W, even after the tolerance window', async () => {
-      const ctrl = new WallboxController({ toleranceMs: TOLERANCE_MS });
+      const ctrl = makeController();
       ctrl.setMode('pv');
       const client = makeClient();
       const state = makeState({ status: 'available' });
@@ -211,7 +216,7 @@ describe('WallboxController', () => {
     });
 
     it('startup countdown names the 1-phase target when surplus is mid-range', async () => {
-      const ctrl = new WallboxController({ toleranceMs: TOLERANCE_MS });
+      const ctrl = makeController();
       ctrl.setMode('pv');
       const client = makeClient();
       const state = makeState({ status: 'available' });
@@ -224,7 +229,7 @@ describe('WallboxController', () => {
 
   describe('pv mode — while charging', () => {
     it('adjusts the charging current to follow surplus without waiting for tolerance', async () => {
-      const ctrl = new WallboxController({ toleranceMs: TOLERANCE_MS });
+      const ctrl = makeController();
       ctrl.setMode('pv');
       const client = makeClient();
       const state = makeState({ status: 'charging', chargingCurrentA: 7 });
@@ -235,7 +240,7 @@ describe('WallboxController', () => {
     });
 
     it('does not rewrite the current if the target matches the current value', async () => {
-      const ctrl = new WallboxController({ toleranceMs: TOLERANCE_MS });
+      const ctrl = makeController();
       ctrl.setMode('pv');
       const client = makeClient();
       const state = makeState({ status: 'charging', chargingCurrentA: 8 });
@@ -244,7 +249,7 @@ describe('WallboxController', () => {
     });
 
     it('does not stop immediately when surplus drops below minimum (waits for tolerance)', async () => {
-      const ctrl = new WallboxController({ toleranceMs: TOLERANCE_MS });
+      const ctrl = makeController();
       ctrl.setMode('pv');
       const client = makeClient();
       const state = makeState({ status: 'charging', chargingCurrentA: 6 });
@@ -253,7 +258,7 @@ describe('WallboxController', () => {
     });
 
     it('stops charging after insufficient surplus persists for the full tolerance window', async () => {
-      const ctrl = new WallboxController({ toleranceMs: TOLERANCE_MS });
+      const ctrl = makeController();
       ctrl.setMode('pv');
       const client = makeClient();
       const state = makeState({ status: 'charging', chargingCurrentA: 6 });
@@ -266,7 +271,7 @@ describe('WallboxController', () => {
     });
 
     it('resets the insufficient-timer once surplus recovers before tolerance elapses', async () => {
-      const ctrl = new WallboxController({ toleranceMs: TOLERANCE_MS });
+      const ctrl = makeController();
       ctrl.setMode('pv');
       const client = makeClient();
       const state = makeState({ status: 'charging', chargingCurrentA: 6 });
@@ -278,7 +283,7 @@ describe('WallboxController', () => {
     });
 
     it('adds back the wallbox\'s own draw so its charging load (already counted inside consumptionPower) does not self-defeat the surplus calc', async () => {
-      const ctrl = new WallboxController({ toleranceMs: TOLERANCE_MS });
+      const ctrl = makeController();
       ctrl.setMode('pv');
       const client = makeClient();
       // House load 500W + wallbox draw 4830W (7A * 3 * 230V) = consumptionPower 5330W.
@@ -298,7 +303,7 @@ describe('WallboxController', () => {
 
   describe('pv mode — phase switching while charging', () => {
     it('switches 1→3 after surplus stays >= 4440 W for the tolerance window', async () => {
-      const ctrl = new WallboxController({ toleranceMs: TOLERANCE_MS });
+      const ctrl = makeController();
       ctrl.setMode('pv');
       const client = makeClient();
       const state = makeState({ status: 'charging', phases: 1, chargingCurrentA: 16 });
@@ -314,7 +319,7 @@ describe('WallboxController', () => {
     });
 
     it('resets the switch-up timer when surplus drops below 4440 W before the window elapses', async () => {
-      const ctrl = new WallboxController({ toleranceMs: TOLERANCE_MS });
+      const ctrl = makeController();
       ctrl.setMode('pv');
       const client = makeClient();
       const state = makeState({ status: 'charging', phases: 1, chargingCurrentA: 16 });
@@ -326,7 +331,7 @@ describe('WallboxController', () => {
     });
 
     it('switches 3→1 instead of stopping when surplus stays in 1380–4140 W for the tolerance window', async () => {
-      const ctrl = new WallboxController({ toleranceMs: TOLERANCE_MS });
+      const ctrl = makeController();
       ctrl.setMode('pv');
       const client = makeClient();
       const state = makeState({ status: 'charging', phases: 3, chargingCurrentA: 6 });
@@ -341,7 +346,7 @@ describe('WallboxController', () => {
     });
 
     it('stays 3-phase in the 4140–4440 W hysteresis band and keeps regulating the current', async () => {
-      const ctrl = new WallboxController({ toleranceMs: TOLERANCE_MS });
+      const ctrl = makeController();
       ctrl.setMode('pv');
       const client = makeClient();
       const state = makeState({ status: 'charging', phases: 3, chargingCurrentA: 7 });
@@ -354,7 +359,7 @@ describe('WallboxController', () => {
     });
 
     it('stays 1-phase below 4440 W and regulates with the 1-phase divisor (230 W/A)', async () => {
-      const ctrl = new WallboxController({ toleranceMs: TOLERANCE_MS });
+      const ctrl = makeController();
       ctrl.setMode('pv');
       const client = makeClient();
       const state = makeState({ status: 'charging', phases: 1, chargingCurrentA: 6 });
@@ -367,7 +372,7 @@ describe('WallboxController', () => {
     });
 
     it('reports the switch-up countdown while the timer runs', async () => {
-      const ctrl = new WallboxController({ toleranceMs: TOLERANCE_MS });
+      const ctrl = makeController();
       ctrl.setMode('pv');
       const client = makeClient();
       const state = makeState({ status: 'charging', phases: 1, chargingCurrentA: 16 });
@@ -378,7 +383,7 @@ describe('WallboxController', () => {
     });
 
     it('reports the switch-down countdown while the timer runs', async () => {
-      const ctrl = new WallboxController({ toleranceMs: TOLERANCE_MS });
+      const ctrl = makeController();
       ctrl.setMode('pv');
       const client = makeClient();
       const state = makeState({ status: 'charging', phases: 3, chargingCurrentA: 6 });
@@ -389,7 +394,7 @@ describe('WallboxController', () => {
     });
 
     it('stops from 1-phase charging when surplus stays below 1380 W for the tolerance window', async () => {
-      const ctrl = new WallboxController({ toleranceMs: TOLERANCE_MS });
+      const ctrl = makeController();
       ctrl.setMode('pv');
       const client = makeClient();
       const state = makeState({ status: 'charging', phases: 1, chargingCurrentA: 6 });
@@ -403,7 +408,7 @@ describe('WallboxController', () => {
     });
 
     it('setMode resets the switch timers', async () => {
-      const ctrl = new WallboxController({ toleranceMs: TOLERANCE_MS });
+      const ctrl = makeController();
       ctrl.setMode('pv');
       const client = makeClient();
       const state = makeState({ status: 'charging', phases: 1, chargingCurrentA: 16 });
@@ -416,7 +421,7 @@ describe('WallboxController', () => {
     });
 
     it('resets the switch-down timer when charging pauses, so a later dip waits the full window again', async () => {
-      const ctrl = new WallboxController({ toleranceMs: TOLERANCE_MS });
+      const ctrl = makeController();
       ctrl.setMode('pv');
       const client = makeClient();
       const charging3p = makeState({ status: 'charging', phases: 3, chargingCurrentA: 6 });
@@ -433,7 +438,7 @@ describe('WallboxController', () => {
     });
 
     it('resets the switch-up timer when charging pauses, so a later surge waits the full window again', async () => {
-      const ctrl = new WallboxController({ toleranceMs: TOLERANCE_MS });
+      const ctrl = makeController();
       ctrl.setMode('pv');
       const client = makeClient();
       const charging1p = makeState({ status: 'charging', phases: 1, chargingCurrentA: 16 });
@@ -452,7 +457,7 @@ describe('WallboxController', () => {
 
   describe('updateDetails', () => {
     it('never calls any client method, even when the tolerance window has elapsed', () => {
-      const ctrl = new WallboxController({ toleranceMs: TOLERANCE_MS });
+      const ctrl = makeController();
       ctrl.setMode('pv');
       const client = makeClient();
       const state = makeState({ status: 'charging', chargingCurrentA: 6 });
@@ -475,7 +480,7 @@ describe('WallboxController', () => {
     });
 
     it('updates surplusW and reason immediately for a fresh data point, without needing tick()', () => {
-      const ctrl = new WallboxController({ toleranceMs: TOLERANCE_MS });
+      const ctrl = makeController();
       ctrl.setMode('pv');
       const state = makeState({ status: 'charging', chargingCurrentA: 8 });
       ctrl.updateDetails({ pvPower: 6500, consumptionPower: 500 }, state, 1_000_000);
@@ -487,7 +492,7 @@ describe('WallboxController', () => {
     });
 
     it('is a no-op in off and manual mode', () => {
-      const ctrl = new WallboxController({ toleranceMs: TOLERANCE_MS });
+      const ctrl = makeController();
       ctrl.updateDetails({ pvPower: 8000, consumptionPower: 500 }, makeState({ status: 'charging' }));
       expect(ctrl.getLastDetails()).toBeNull();
 
@@ -499,7 +504,7 @@ describe('WallboxController', () => {
 
   describe('getLastDetails', () => {
     it('returns null in off and manual mode', async () => {
-      const ctrl = new WallboxController({ toleranceMs: TOLERANCE_MS });
+      const ctrl = makeController();
       const client = makeClient();
       await ctrl.tick({ pvPower: 8000, consumptionPower: 500 }, makeState({ status: 'available' }), client, 1_000_000);
       expect(ctrl.getLastDetails()).toBeNull();
@@ -510,7 +515,7 @@ describe('WallboxController', () => {
     });
 
     it('reports the target current while charging with sufficient surplus', async () => {
-      const ctrl = new WallboxController({ toleranceMs: TOLERANCE_MS });
+      const ctrl = makeController();
       ctrl.setMode('pv');
       const client = makeClient();
       const state = makeState({ status: 'charging', chargingCurrentA: 8 });
@@ -519,7 +524,7 @@ describe('WallboxController', () => {
     });
 
     it('reports the countdown while charging with insufficient surplus', async () => {
-      const ctrl = new WallboxController({ toleranceMs: TOLERANCE_MS });
+      const ctrl = makeController();
       ctrl.setMode('pv');
       const client = makeClient();
       const state = makeState({ status: 'charging', chargingCurrentA: 6 });
@@ -530,7 +535,7 @@ describe('WallboxController', () => {
     });
 
     it('reports "Kein Fahrzeug verbunden" when not charging and no vehicle connected', async () => {
-      const ctrl = new WallboxController({ toleranceMs: TOLERANCE_MS });
+      const ctrl = makeController();
       ctrl.setMode('pv');
       const client = makeClient();
       const state = makeState({ status: 'available', vehicleConnected: false });
@@ -539,7 +544,7 @@ describe('WallboxController', () => {
     });
 
     it('reports the startup countdown while not charging with sufficient surplus', async () => {
-      const ctrl = new WallboxController({ toleranceMs: TOLERANCE_MS });
+      const ctrl = makeController();
       ctrl.setMode('pv');
       const client = makeClient();
       const state = makeState({ status: 'available' });
@@ -550,7 +555,7 @@ describe('WallboxController', () => {
     });
 
     it('reports insufficient surplus with required-power figure while not charging', async () => {
-      const ctrl = new WallboxController({ toleranceMs: TOLERANCE_MS });
+      const ctrl = makeController();
       ctrl.setMode('pv');
       const client = makeClient();
       const state = makeState({ status: 'available' });
@@ -559,7 +564,7 @@ describe('WallboxController', () => {
     });
 
     it('reports "Warte auf Wallbox-Daten" when wallboxState is null', async () => {
-      const ctrl = new WallboxController({ toleranceMs: TOLERANCE_MS });
+      const ctrl = makeController();
       ctrl.setMode('pv');
       const client = makeClient();
       await ctrl.tick({ pvPower: 8000, consumptionPower: 500 }, null, client, 1_000_000);
@@ -569,7 +574,7 @@ describe('WallboxController', () => {
 
   describe('updateConfig', () => {
     it('applies a new toleranceMs to subsequent ticks', async () => {
-      const ctrl = new WallboxController({ toleranceMs: TOLERANCE_MS });
+      const ctrl = makeController();
       ctrl.updateConfig({ toleranceMs: 1000 });
       ctrl.setMode('pv');
       const client = makeClient();
@@ -578,6 +583,97 @@ describe('WallboxController', () => {
       await ctrl.tick({ pvPower: 5500, consumptionPower: 500 }, state, client, t0);
       await ctrl.tick({ pvPower: 5500, consumptionPower: 500 }, state, client, t0 + 1000);
       expect(client.startCharging).toHaveBeenCalledTimes(1);
+    });
+  });
+
+  describe('pv mode — AC load cap', () => {
+    it('caps the charging current at the AC load cap instead of the surplus', async () => {
+      const ctrl = makeController({ acLoadCapW: 11_000 });
+      ctrl.setMode('pv');
+      const client = makeClient();
+      // surplus = 15000, Hauslast (ohne Wallbox) = 500 → available = min(15000, 11000-500) = 10500
+      const state = makeState({ status: 'charging', phases: 3, chargingCurrentA: 16 });
+      await ctrl.tick({ pvPower: 15500, consumptionPower: 500 }, state, client, 1_000_000);
+      expect(client.setChargingCurrent).toHaveBeenCalledWith(15); // floor(10500/690) = 15, nicht 16
+      expect(ctrl.getLastDetails()).toEqual({
+        surplusW: 10500,
+        targetCurrentA: 15,
+        reason: 'Lädt 3-phasig mit 15 A (Überschuss 10500 W) — AC-Limit aktiv',
+      });
+    });
+
+    it('does not start despite a huge surplus when house load eats the cap', async () => {
+      const ctrl = makeController({ acLoadCapW: 11_000 });
+      ctrl.setMode('pv');
+      const client = makeClient();
+      // surplus = 10000, Hauslast = 10000 → available = min(10000, 1000) = 1000 < 1380
+      const state = makeState({ status: 'available' });
+      const t0 = 1_000_000;
+      await ctrl.tick({ pvPower: 20_000, consumptionPower: 10_000 }, state, client, t0);
+      await ctrl.tick({ pvPower: 20_000, consumptionPower: 10_000 }, state, client, t0 + TOLERANCE_MS);
+      expect(client.startCharging).not.toHaveBeenCalled();
+      expect(ctrl.getLastDetails()).toEqual({
+        surplusW: 1000,
+        targetCurrentA: null,
+        reason: 'Zu wenig Überschuss (1000 W, benötigt 1380 W) — AC-Limit aktiv',
+      });
+    });
+
+    it('stops charging via the tolerance timer when house load pushes past the cap', async () => {
+      const ctrl = makeController({ acLoadCapW: 11_000 });
+      ctrl.setMode('pv');
+      const client = makeClient();
+      // Wallbox zieht 1380 W (1-phasig 6 A); Hauslast 10000 W.
+      // surplus = 12000 - 11380 + 1380 = 2000 ≥ 1380, aber available = min(2000, 11000-10000) = 1000 < 1380
+      const state = makeState({ status: 'charging', phases: 1, chargingCurrentA: 6, powerW: 1380 });
+      const t0 = 1_000_000;
+      await ctrl.tick({ pvPower: 12_000, consumptionPower: 11_380 }, state, client, t0);
+      expect(client.stopCharging).not.toHaveBeenCalled();
+      await ctrl.tick({ pvPower: 12_000, consumptionPower: 11_380 }, state, client, t0 + TOLERANCE_MS);
+      expect(client.stopCharging).toHaveBeenCalledTimes(1);
+    });
+
+    it('gates the switch-up threshold on availableW, not surplus', async () => {
+      const ctrl = makeController({ acLoadCapW: 4_800 });
+      ctrl.setMode('pv');
+      const client = makeClient();
+      // Wallbox zieht 3680 W (1-phasig 16 A); Hauslast 500 W.
+      // surplus = 10000 - 4180 + 3680 = 9500 ≥ 4440, aber available = min(9500, 4800-500) = 4300 < 4440
+      const state = makeState({ status: 'charging', phases: 1, chargingCurrentA: 16, powerW: 3680 });
+      const t0 = 1_000_000;
+      await ctrl.tick({ pvPower: 10_000, consumptionPower: 4_180 }, state, client, t0);
+      await ctrl.tick({ pvPower: 10_000, consumptionPower: 4_180 }, state, client, t0 + TOLERANCE_MS);
+      expect(client.setPhases).not.toHaveBeenCalled(); // kein Hochschalten, Deckel hält available unter 4440
+      expect(ctrl.getLastDetails()?.reason).toBe('Lädt 1-phasig mit 16 A (Überschuss 4300 W) — AC-Limit aktiv');
+    });
+
+    it('emits event payloads carrying availableW when capped', async () => {
+      const started: unknown[] = [];
+      const onStarted = (e: unknown) => started.push(e);
+      energyEvents.on('wallbox:charging-started', onStarted as never);
+      try {
+        const ctrl = makeController({ acLoadCapW: 11_000 });
+        ctrl.setMode('pv');
+        const client = makeClient();
+        const state = makeState({ status: 'available' });
+        const t0 = 1_000_000;
+        // surplus = 15000, Hauslast 500 → available = 10500 → 3-phasig floor(10500/690) = 15 A
+        await ctrl.tick({ pvPower: 15_500, consumptionPower: 500 }, state, client, t0);
+        await ctrl.tick({ pvPower: 15_500, consumptionPower: 500 }, state, client, t0 + TOLERANCE_MS);
+        expect(started).toEqual([{ phases: 3, currentA: 15, surplusW: 10500 }]);
+      } finally {
+        energyEvents.off('wallbox:charging-started', onStarted as never);
+      }
+    });
+
+    it('updateConfig({ acLoadCapW }) applies to subsequent ticks', async () => {
+      const ctrl = makeController(); // Deckel zunächst wirkungslos (100 kW)
+      ctrl.updateConfig({ acLoadCapW: 11_000 });
+      ctrl.setMode('pv');
+      const client = makeClient();
+      const state = makeState({ status: 'charging', phases: 3, chargingCurrentA: 16 });
+      await ctrl.tick({ pvPower: 15_500, consumptionPower: 500 }, state, client, 1_000_000);
+      expect(client.setChargingCurrent).toHaveBeenCalledWith(15);
     });
   });
 
@@ -596,7 +692,7 @@ describe('WallboxController', () => {
 
     it('emits wallbox:charging-started with payload on a 3-phase start', async () => {
       const started = listen<{ phases: 1 | 3; currentA: number; surplusW: number }>('wallbox:charging-started');
-      const ctrl = new WallboxController({ toleranceMs: TOLERANCE_MS });
+      const ctrl = makeController();
       ctrl.setMode('pv');
       const client = makeClient();
       const state = makeState({ status: 'available' });
@@ -609,7 +705,7 @@ describe('WallboxController', () => {
 
     it('emits wallbox:charging-started with payload on a 1-phase start', async () => {
       const started = listen<{ phases: 1 | 3; currentA: number; surplusW: number }>('wallbox:charging-started');
-      const ctrl = new WallboxController({ toleranceMs: TOLERANCE_MS });
+      const ctrl = makeController();
       ctrl.setMode('pv');
       const client = makeClient();
       const state = makeState({ status: 'available' });
@@ -621,7 +717,7 @@ describe('WallboxController', () => {
 
     it('emits wallbox:charging-stopped when stopping due to insufficient surplus', async () => {
       const stopped = listen<{ surplusW: number }>('wallbox:charging-stopped');
-      const ctrl = new WallboxController({ toleranceMs: TOLERANCE_MS });
+      const ctrl = makeController();
       ctrl.setMode('pv');
       const client = makeClient();
       const state = makeState({ status: 'charging', chargingCurrentA: 6 });
@@ -634,7 +730,7 @@ describe('WallboxController', () => {
 
     it('emits wallbox:phases-switched on switch-up 1→3', async () => {
       const switched = listen<{ from: 1 | 3; to: 1 | 3; currentA: number; surplusW: number }>('wallbox:phases-switched');
-      const ctrl = new WallboxController({ toleranceMs: TOLERANCE_MS });
+      const ctrl = makeController();
       ctrl.setMode('pv');
       const client = makeClient();
       const state = makeState({ status: 'charging', phases: 1, chargingCurrentA: 16 });
@@ -646,7 +742,7 @@ describe('WallboxController', () => {
 
     it('emits wallbox:phases-switched on switch-down 3→1', async () => {
       const switched = listen<{ from: 1 | 3; to: 1 | 3; currentA: number; surplusW: number }>('wallbox:phases-switched');
-      const ctrl = new WallboxController({ toleranceMs: TOLERANCE_MS });
+      const ctrl = makeController();
       ctrl.setMode('pv');
       const client = makeClient();
       const state = makeState({ status: 'charging', phases: 3, chargingCurrentA: 6 });
@@ -658,7 +754,7 @@ describe('WallboxController', () => {
 
     it('does not emit anything when the off-mode stop runs (user action, not automation)', async () => {
       const stopped = listen<{ surplusW: number }>('wallbox:charging-stopped');
-      const ctrl = new WallboxController({ toleranceMs: TOLERANCE_MS });
+      const ctrl = makeController();
       ctrl.setMode('pv');
       ctrl.setMode('off');
       const client = makeClient();
@@ -670,7 +766,7 @@ describe('WallboxController', () => {
     it('does not emit anything during plain current regulation', async () => {
       const started = listen<unknown>('wallbox:charging-started');
       const switched = listen<unknown>('wallbox:phases-switched');
-      const ctrl = new WallboxController({ toleranceMs: TOLERANCE_MS });
+      const ctrl = makeController();
       ctrl.setMode('pv');
       const client = makeClient();
       const state = makeState({ status: 'charging', chargingCurrentA: 7 });
@@ -682,7 +778,7 @@ describe('WallboxController', () => {
 
     it('deduplicates charging-started while start attempts never result in actual charging (car full)', async () => {
       const started = listen<unknown>('wallbox:charging-started');
-      const ctrl = new WallboxController({ toleranceMs: TOLERANCE_MS });
+      const ctrl = makeController();
       ctrl.setMode('pv');
       const client = makeClient();
       const state = makeState({ status: 'available' }); // bleibt dauerhaft nicht-ladend
@@ -697,7 +793,7 @@ describe('WallboxController', () => {
 
     it('emits charging-started again after an actual charging phase was observed', async () => {
       const started = listen<unknown>('wallbox:charging-started');
-      const ctrl = new WallboxController({ toleranceMs: TOLERANCE_MS });
+      const ctrl = makeController();
       ctrl.setMode('pv');
       const client = makeClient();
       const t0 = 1_000_000;
@@ -715,7 +811,7 @@ describe('WallboxController', () => {
 
     it('resets the started-dedupe when the vehicle is unplugged', async () => {
       const started = listen<unknown>('wallbox:charging-started');
-      const ctrl = new WallboxController({ toleranceMs: TOLERANCE_MS });
+      const ctrl = makeController();
       ctrl.setMode('pv');
       const client = makeClient();
       const t0 = 1_000_000;
