@@ -65,7 +65,7 @@ describe('loadConfig', () => {
     const config = loadConfig();
     expect(config.WALLBOX_PORT).toBe(502);
     expect(config.WALLBOX_UNIT_ID).toBe(255);
-    expect(config.WALLBOX_POLL_INTERVAL_MS).toBe(5000);
+    expect(config.WALLBOX_POLL_INTERVAL_MS).toBe(30000);
   });
 
   it('loads WALLBOX_PV_TOLERANCE_MINUTES with default value', () => {
