@@ -12,6 +12,7 @@ import { GridHistoryService } from './grid-history-service.js';
 import { NibePoller } from './nibe-poller.js';
 import { createWallboxClient, type WallboxClient } from './wallbox/WallboxClient.js';
 import { connectWallboxWithRetry } from './wallbox/connectWithRetry.js';
+import { WallboxVehicleWatcher } from './wallbox/VehicleWatcher.js';
 import { initVapid } from './vapid.js';
 import { PushService } from './push-service.js';
 import { PvTracker } from './pv-tracker.js';
@@ -116,7 +117,8 @@ async function main() {
           err.message,
         ),
     }).then(() => {
-      client.startPolling(config.WALLBOX_POLL_INTERVAL_MS, () => {});
+      const vehicleWatcher = new WallboxVehicleWatcher();
+      client.startPolling(config.WALLBOX_POLL_INTERVAL_MS, (state) => vehicleWatcher.observe(state));
       console.log('[energy-control] EM2GO wallbox (Modbus) enabled');
     });
   }
