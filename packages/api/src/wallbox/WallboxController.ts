@@ -20,10 +20,15 @@ export interface WallboxControllerDetails {
 }
 
 const VOLTAGE_V = 230;
-const PHASES = 3;
-const MIN_POWER_W = PHASES * MIN_CHARGING_CURRENT_A * VOLTAGE_V;
+const MIN_POWER_1P_W = 1 * MIN_CHARGING_CURRENT_A * VOLTAGE_V; // 1380 W
+const MIN_POWER_3P_W = 3 * MIN_CHARGING_CURRENT_A * VOLTAGE_V; // 4140 W
+// Hysterese: hochgeschaltet (bzw. 3-phasig gestartet) wird erst mit Marge über dem
+// 3P-Minimum, damit ein um die Schwelle pendelnder Überschuss nicht ständig umschaltet.
+const PHASE_SWITCH_MARGIN_W = 300;
+const SWITCH_UP_W = MIN_POWER_3P_W + PHASE_SWITCH_MARGIN_W; // 4440 W
 
-function clampCurrent(ampere: number): number {
+function targetCurrent(surplusW: number, phases: 1 | 3): number {
+  const ampere = Math.floor(surplusW / (phases * VOLTAGE_V));
   return Math.min(MAX_CHARGING_CURRENT_A, Math.max(MIN_CHARGING_CURRENT_A, ampere));
 }
 
@@ -134,9 +139,9 @@ export class WallboxController {
 
     if (isCharging) {
       this.sufficientSince = null;
-      if (surplusW >= MIN_POWER_W) {
+      if (surplusW >= MIN_POWER_3P_W) {
         this.insufficientSince = null;
-        const targetA = clampCurrent(Math.floor(surplusW / (PHASES * VOLTAGE_V)));
+        const targetA = targetCurrent(surplusW, 3);
         if (client && Math.round(wallboxState.chargingCurrentA) !== targetA) {
           await client.setChargingCurrent(targetA);
         }
@@ -166,28 +171,28 @@ export class WallboxController {
         this.lastDetails = { surplusW: Math.round(surplusW), targetCurrentA: null, reason: 'Kein Fahrzeug verbunden' };
         return;
       }
-      if (surplusW >= MIN_POWER_W) {
+      if (surplusW >= MIN_POWER_1P_W) {
         if (this.sufficientSince === null) this.sufficientSince = now;
+        const startPhases: 1 | 3 = surplusW >= SWITCH_UP_W ? 3 : 1;
         const elapsedS = Math.round((now - this.sufficientSince) / 1000);
         const toleranceS = Math.round(this.config.toleranceMs / 1000);
         if (client && now - this.sufficientSince >= this.config.toleranceMs) {
-          const targetA = clampCurrent(Math.floor(surplusW / (PHASES * VOLTAGE_V)));
-          await client.setPhases(3);
-          await client.setChargingCurrent(targetA);
+          await client.setPhases(startPhases);
+          await client.setChargingCurrent(targetCurrent(surplusW, startPhases));
           await client.startCharging();
           this.sufficientSince = null;
         }
         this.lastDetails = {
           surplusW: Math.round(surplusW),
           targetCurrentA: null,
-          reason: `Ausreichend Überschuss seit ${elapsedS}s — startet nach ${toleranceS}s`,
+          reason: `Ausreichend Überschuss (${startPhases}-phasig) seit ${elapsedS}s — startet nach ${toleranceS}s`,
         };
       } else {
         this.sufficientSince = null;
         this.lastDetails = {
           surplusW: Math.round(surplusW),
           targetCurrentA: null,
-          reason: `Zu wenig Überschuss (${Math.round(surplusW)} W, benötigt ${MIN_POWER_W} W)`,
+          reason: `Zu wenig Überschuss (${Math.round(surplusW)} W, benötigt ${MIN_POWER_1P_W} W)`,
         };
       }
     }

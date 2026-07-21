@@ -153,6 +153,74 @@ describe('WallboxController', () => {
     });
   });
 
+  describe('pv mode — start phase decision', () => {
+    it('starts 1-phase when surplus is between 1380 and 4440 W', async () => {
+      const ctrl = new WallboxController({ toleranceMs: TOLERANCE_MS });
+      ctrl.setMode('pv');
+      const client = makeClient();
+      const state = makeState({ status: 'available' });
+      const t0 = 1_000_000;
+      // surplus = 2500W: >= 1380 (1p min) but < 4440 (3p start threshold)
+      await ctrl.tick({ pvPower: 3000, consumptionPower: 500 }, state, client, t0);
+      expect(client.startCharging).not.toHaveBeenCalled();
+
+      await ctrl.tick({ pvPower: 3000, consumptionPower: 500 }, state, client, t0 + TOLERANCE_MS);
+      expect(client.setPhases).toHaveBeenCalledWith(1);
+      expect(client.setChargingCurrent).toHaveBeenCalledWith(10); // floor(2500 / 230) = 10
+      expect(client.startCharging).toHaveBeenCalledTimes(1);
+    });
+
+    it('starts 1-phase in the 4140–4440 W band (margin applies to the start decision)', async () => {
+      const ctrl = new WallboxController({ toleranceMs: TOLERANCE_MS });
+      ctrl.setMode('pv');
+      const client = makeClient();
+      const state = makeState({ status: 'available' });
+      const t0 = 1_000_000;
+      // surplus = 4200W: over 3p minimum (4140) but under start threshold (4440)
+      await ctrl.tick({ pvPower: 4700, consumptionPower: 500 }, state, client, t0);
+      await ctrl.tick({ pvPower: 4700, consumptionPower: 500 }, state, client, t0 + TOLERANCE_MS);
+      expect(client.setPhases).toHaveBeenCalledWith(1);
+      expect(client.setChargingCurrent).toHaveBeenCalledWith(16); // floor(4200/230) = 18 → clamp 16
+      expect(client.startCharging).toHaveBeenCalledTimes(1);
+    });
+
+    it('starts 3-phase at surplus >= 4440 W', async () => {
+      const ctrl = new WallboxController({ toleranceMs: TOLERANCE_MS });
+      ctrl.setMode('pv');
+      const client = makeClient();
+      const state = makeState({ status: 'available' });
+      const t0 = 1_000_000;
+      await ctrl.tick({ pvPower: 4940, consumptionPower: 500 }, state, client, t0);
+      await ctrl.tick({ pvPower: 4940, consumptionPower: 500 }, state, client, t0 + TOLERANCE_MS);
+      expect(client.setPhases).toHaveBeenCalledWith(3);
+      expect(client.setChargingCurrent).toHaveBeenCalledWith(6); // floor(4440 / 690) = 6
+      expect(client.startCharging).toHaveBeenCalledTimes(1);
+    });
+
+    it('does not start below 1380 W, even after the tolerance window', async () => {
+      const ctrl = new WallboxController({ toleranceMs: TOLERANCE_MS });
+      ctrl.setMode('pv');
+      const client = makeClient();
+      const state = makeState({ status: 'available' });
+      const t0 = 1_000_000;
+      await ctrl.tick({ pvPower: 1800, consumptionPower: 500 }, state, client, t0); // surplus 1300
+      await ctrl.tick({ pvPower: 1800, consumptionPower: 500 }, state, client, t0 + TOLERANCE_MS);
+      expect(client.startCharging).not.toHaveBeenCalled();
+      expect(ctrl.getLastDetails()).toEqual({ surplusW: 1300, targetCurrentA: null, reason: 'Zu wenig Überschuss (1300 W, benötigt 1380 W)' });
+    });
+
+    it('startup countdown names the 1-phase target when surplus is mid-range', async () => {
+      const ctrl = new WallboxController({ toleranceMs: TOLERANCE_MS });
+      ctrl.setMode('pv');
+      const client = makeClient();
+      const state = makeState({ status: 'available' });
+      const t0 = 1_000_000;
+      await ctrl.tick({ pvPower: 3000, consumptionPower: 500 }, state, client, t0);
+      await ctrl.tick({ pvPower: 3000, consumptionPower: 500 }, state, client, t0 + 30_000);
+      expect(ctrl.getLastDetails()).toEqual({ surplusW: 2500, targetCurrentA: null, reason: 'Ausreichend Überschuss (1-phasig) seit 30s — startet nach 120s' });
+    });
+  });
+
   describe('pv mode — while charging', () => {
     it('adjusts the charging current to follow surplus without waiting for tolerance', async () => {
       const ctrl = new WallboxController({ toleranceMs: TOLERANCE_MS });
@@ -323,7 +391,7 @@ describe('WallboxController', () => {
       const t0 = 1_000_000;
       await ctrl.tick({ pvPower: 5500, consumptionPower: 500 }, state, client, t0);
       await ctrl.tick({ pvPower: 5500, consumptionPower: 500 }, state, client, t0 + 30_000);
-      expect(ctrl.getLastDetails()).toEqual({ surplusW: 5000, targetCurrentA: null, reason: 'Ausreichend Überschuss seit 30s — startet nach 120s' });
+      expect(ctrl.getLastDetails()).toEqual({ surplusW: 5000, targetCurrentA: null, reason: 'Ausreichend Überschuss (3-phasig) seit 30s — startet nach 120s' });
     });
 
     it('reports insufficient surplus with required-power figure while not charging', async () => {
@@ -332,7 +400,7 @@ describe('WallboxController', () => {
       const client = makeClient();
       const state = makeState({ status: 'available' });
       await ctrl.tick({ pvPower: 1000, consumptionPower: 500 }, state, client, 1_000_000);
-      expect(ctrl.getLastDetails()).toEqual({ surplusW: 500, targetCurrentA: null, reason: 'Zu wenig Überschuss (500 W, benötigt 4140 W)' });
+      expect(ctrl.getLastDetails()).toEqual({ surplusW: 500, targetCurrentA: null, reason: 'Zu wenig Überschuss (500 W, benötigt 1380 W)' });
     });
 
     it('reports "Warte auf Wallbox-Daten" when wallboxState is null', async () => {
