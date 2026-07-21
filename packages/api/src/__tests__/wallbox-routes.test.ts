@@ -214,6 +214,14 @@ describe('wallbox routes — with AppState', () => {
     expect(res.statusCode).toBe(400);
   });
 
+  it('POST /api/wallbox/retry-start calls resetRejected on the controller', async () => {
+    const resetRejected = vi.spyOn(appState.wallboxController, 'resetRejected');
+    const res = await app.inject({ method: 'POST', url: '/api/wallbox/retry-start' });
+    expect(res.statusCode).toBe(200);
+    expect(res.json()).toEqual({ ok: true });
+    expect(resetRejected).toHaveBeenCalledTimes(1);
+  });
+
   it('picks up a wallbox client set on AppState after the server was already built', async () => {
     const lateApp = buildServer({ testing: true, appState });
     await lateApp.ready();

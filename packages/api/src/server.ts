@@ -767,6 +767,12 @@ export function buildServer(options: ServerOptions = {}): FastifyInstance {
     return { mode: state.wallboxController.getMode() };
   });
 
+  app.post('/api/wallbox/retry-start', async (_request, _reply) => {
+    if (!state) throw new Error('AppState not initialized');
+    state.wallboxController.resetRejected();
+    return { ok: true };
+  });
+
   app.post('/api/wallbox/start', async (_request, reply) => {
     const wallboxClient = getWallboxClient();
     if (!wallboxClient) return reply.code(503).send({ error: 'Wallbox not configured' });
