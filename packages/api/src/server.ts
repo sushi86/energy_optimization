@@ -748,13 +748,20 @@ export function buildServer(options: ServerOptions = {}): FastifyInstance {
     // Serve the background poller's cache instead of issuing a fresh Modbus read per
     // request — the wallbox's Modbus TCP stack can't handle concurrent request streams,
     // and an unreachable box would pile up reads behind the request lock (the UI polls
-    // this endpoint every second). Before the first poll has cached anything, the
-    // client is registered but still connecting: report that as initializing.
+    // this endpoint every second).
     const cached = wallboxClient.getLastState();
-    if (!cached) {
-      return { connected: false, initializing: true, vehicleConnected: false, mode, controllerDetails };
-    }
-    return { ...cached, connected: wallboxClient.isConnected(), mode, controllerDetails };
+    const conn = wallboxClient.getConnectionInfo();
+    return {
+      ...(cached ?? {}),
+      connected: conn.connected,
+      initializing: conn.initializing,
+      vehicleConnected: cached?.vehicleConnected ?? false,
+      error: conn.error,
+      disconnectedSinceMs: conn.disconnectedSinceMs,
+      consecutiveFailures: conn.consecutiveFailures,
+      mode,
+      controllerDetails,
+    };
   });
 
   app.post('/api/wallbox/mode', async (request, reply) => {

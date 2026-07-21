@@ -123,6 +123,41 @@ describe('wallbox routes', () => {
     expect(body.mode).toBe('off');
   });
 
+  it('GET /api/wallbox/status includes connection diagnostics (error, disconnectedSinceMs, consecutiveFailures)', async () => {
+    const res = await app.inject({ method: 'GET', url: '/api/wallbox/status' });
+    expect(res.statusCode).toBe(200);
+    const body = res.json();
+    expect(body.error).toBeNull();
+    expect(body.disconnectedSinceMs).toBeNull();
+    expect(body.consecutiveFailures).toBe(0);
+  });
+
+  it('GET /api/wallbox/status reports error/disconnectedSinceMs/consecutiveFailures after a failed poll', async () => {
+    const wallboxClient = createWallboxClient({ host: '192.168.1.254', port: 502, unitId: 255 });
+    await wallboxClient.connect();
+    await wallboxClient.getState();
+    // Use a persistent rejection (not "once") because heartbeat timers from other
+    // tests' wallboxClient instances share this same mock and can steal a one-shot
+    // rejection before our own getState() call reaches it.
+    mockReadHoldingRegisters.mockRejectedValue(new Error('ECONNRESET'));
+    await wallboxClient.getState().catch(() => undefined);
+    mockReadHoldingRegisters.mockResolvedValue(regResponse([1]));
+    const failingApp = buildServer({ testing: true, wallboxClient });
+    await failingApp.ready();
+
+    const res = await failingApp.inject({ method: 'GET', url: '/api/wallbox/status' });
+    expect(res.statusCode).toBe(200);
+    const body = res.json();
+    expect(body.connected).toBe(false);
+    expect(body.initializing).toBe(false);
+    expect(body.error).toBe('ECONNRESET');
+    expect(body.disconnectedSinceMs).not.toBeNull();
+    expect(body.consecutiveFailures).toBe(1);
+    expect(body.vehicleConnected).toBe(false);
+
+    await failingApp.close();
+  });
+
   it('GET /api/wallbox/status includes controllerDetails as null when no AppState is wired', async () => {
     const res = await app.inject({ method: 'GET', url: '/api/wallbox/status' });
     expect(res.json().controllerDetails).toBeNull();
