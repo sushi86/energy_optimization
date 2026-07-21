@@ -1,6 +1,7 @@
-import { describe, it, expect, vi } from 'vitest';
+import { describe, it, expect, vi, afterEach } from 'vitest';
 import { WallboxController } from '../wallbox/WallboxController.js';
 import type { WallboxState } from '../wallbox/types.js';
+import { energyEvents } from '../energy-events.js';
 
 const TOLERANCE_MS = 120_000; // 2 minutes
 
@@ -577,6 +578,157 @@ describe('WallboxController', () => {
       await ctrl.tick({ pvPower: 5500, consumptionPower: 500 }, state, client, t0);
       await ctrl.tick({ pvPower: 5500, consumptionPower: 500 }, state, client, t0 + 1000);
       expect(client.startCharging).toHaveBeenCalledTimes(1);
+    });
+  });
+
+  describe('pv mode — event emissions', () => {
+    afterEach(() => {
+      energyEvents.removeAllListeners('wallbox:charging-started');
+      energyEvents.removeAllListeners('wallbox:charging-stopped');
+      energyEvents.removeAllListeners('wallbox:phases-switched');
+    });
+
+    function listen<T>(event: 'wallbox:charging-started' | 'wallbox:charging-stopped' | 'wallbox:phases-switched'): T[] {
+      const received: T[] = [];
+      energyEvents.on(event, ((e: T) => received.push(e)) as never);
+      return received;
+    }
+
+    it('emits wallbox:charging-started with payload on a 3-phase start', async () => {
+      const started = listen<{ phases: 1 | 3; currentA: number; surplusW: number }>('wallbox:charging-started');
+      const ctrl = new WallboxController({ toleranceMs: TOLERANCE_MS });
+      ctrl.setMode('pv');
+      const client = makeClient();
+      const state = makeState({ status: 'available' });
+      const t0 = 1_000_000;
+      await ctrl.tick({ pvPower: 5500, consumptionPower: 500 }, state, client, t0);
+      expect(started).toHaveLength(0); // countdown läuft noch
+      await ctrl.tick({ pvPower: 5500, consumptionPower: 500 }, state, client, t0 + TOLERANCE_MS);
+      expect(started).toEqual([{ phases: 3, currentA: 7, surplusW: 5000 }]);
+    });
+
+    it('emits wallbox:charging-started with payload on a 1-phase start', async () => {
+      const started = listen<{ phases: 1 | 3; currentA: number; surplusW: number }>('wallbox:charging-started');
+      const ctrl = new WallboxController({ toleranceMs: TOLERANCE_MS });
+      ctrl.setMode('pv');
+      const client = makeClient();
+      const state = makeState({ status: 'available' });
+      const t0 = 1_000_000;
+      await ctrl.tick({ pvPower: 3000, consumptionPower: 500 }, state, client, t0);
+      await ctrl.tick({ pvPower: 3000, consumptionPower: 500 }, state, client, t0 + TOLERANCE_MS);
+      expect(started).toEqual([{ phases: 1, currentA: 10, surplusW: 2500 }]);
+    });
+
+    it('emits wallbox:charging-stopped when stopping due to insufficient surplus', async () => {
+      const stopped = listen<{ surplusW: number }>('wallbox:charging-stopped');
+      const ctrl = new WallboxController({ toleranceMs: TOLERANCE_MS });
+      ctrl.setMode('pv');
+      const client = makeClient();
+      const state = makeState({ status: 'charging', chargingCurrentA: 6 });
+      const t0 = 1_000_000;
+      await ctrl.tick({ pvPower: 1000, consumptionPower: 500 }, state, client, t0);
+      expect(stopped).toHaveLength(0);
+      await ctrl.tick({ pvPower: 1000, consumptionPower: 500 }, state, client, t0 + TOLERANCE_MS);
+      expect(stopped).toEqual([{ surplusW: 500 }]);
+    });
+
+    it('emits wallbox:phases-switched on switch-up 1→3', async () => {
+      const switched = listen<{ from: 1 | 3; to: 1 | 3; currentA: number; surplusW: number }>('wallbox:phases-switched');
+      const ctrl = new WallboxController({ toleranceMs: TOLERANCE_MS });
+      ctrl.setMode('pv');
+      const client = makeClient();
+      const state = makeState({ status: 'charging', phases: 1, chargingCurrentA: 16 });
+      const t0 = 1_000_000;
+      await ctrl.tick({ pvPower: 6500, consumptionPower: 500 }, state, client, t0);
+      await ctrl.tick({ pvPower: 6500, consumptionPower: 500 }, state, client, t0 + TOLERANCE_MS);
+      expect(switched).toEqual([{ from: 1, to: 3, currentA: 8, surplusW: 6000 }]);
+    });
+
+    it('emits wallbox:phases-switched on switch-down 3→1', async () => {
+      const switched = listen<{ from: 1 | 3; to: 1 | 3; currentA: number; surplusW: number }>('wallbox:phases-switched');
+      const ctrl = new WallboxController({ toleranceMs: TOLERANCE_MS });
+      ctrl.setMode('pv');
+      const client = makeClient();
+      const state = makeState({ status: 'charging', phases: 3, chargingCurrentA: 6 });
+      const t0 = 1_000_000;
+      await ctrl.tick({ pvPower: 3500, consumptionPower: 500 }, state, client, t0);
+      await ctrl.tick({ pvPower: 3500, consumptionPower: 500 }, state, client, t0 + TOLERANCE_MS);
+      expect(switched).toEqual([{ from: 3, to: 1, currentA: 13, surplusW: 3000 }]);
+    });
+
+    it('does not emit anything when the off-mode stop runs (user action, not automation)', async () => {
+      const stopped = listen<{ surplusW: number }>('wallbox:charging-stopped');
+      const ctrl = new WallboxController({ toleranceMs: TOLERANCE_MS });
+      ctrl.setMode('pv');
+      ctrl.setMode('off');
+      const client = makeClient();
+      await ctrl.tick({ pvPower: 5500, consumptionPower: 500 }, makeState({ status: 'charging' }), client, 1_000_000);
+      expect(client.stopCharging).toHaveBeenCalledTimes(1);
+      expect(stopped).toHaveLength(0);
+    });
+
+    it('does not emit anything during plain current regulation', async () => {
+      const started = listen<unknown>('wallbox:charging-started');
+      const switched = listen<unknown>('wallbox:phases-switched');
+      const ctrl = new WallboxController({ toleranceMs: TOLERANCE_MS });
+      ctrl.setMode('pv');
+      const client = makeClient();
+      const state = makeState({ status: 'charging', chargingCurrentA: 7 });
+      await ctrl.tick({ pvPower: 6500, consumptionPower: 500 }, state, client, 1_000_000);
+      expect(client.setChargingCurrent).toHaveBeenCalledWith(8);
+      expect(started).toHaveLength(0);
+      expect(switched).toHaveLength(0);
+    });
+
+    it('deduplicates charging-started while start attempts never result in actual charging (car full)', async () => {
+      const started = listen<unknown>('wallbox:charging-started');
+      const ctrl = new WallboxController({ toleranceMs: TOLERANCE_MS });
+      ctrl.setMode('pv');
+      const client = makeClient();
+      const state = makeState({ status: 'available' }); // bleibt dauerhaft nicht-ladend
+      const t0 = 1_000_000;
+      await ctrl.tick({ pvPower: 5500, consumptionPower: 500 }, state, client, t0);
+      await ctrl.tick({ pvPower: 5500, consumptionPower: 500 }, state, client, t0 + TOLERANCE_MS); // 1. Startversuch
+      await ctrl.tick({ pvPower: 5500, consumptionPower: 500 }, state, client, t0 + TOLERANCE_MS + 1000);
+      await ctrl.tick({ pvPower: 5500, consumptionPower: 500 }, state, client, t0 + 2 * TOLERANCE_MS + 1000); // 2. Startversuch
+      expect(client.startCharging).toHaveBeenCalledTimes(2); // Retries laufen weiter
+      expect(started).toHaveLength(1); // aber nur eine Meldung
+    });
+
+    it('emits charging-started again after an actual charging phase was observed', async () => {
+      const started = listen<unknown>('wallbox:charging-started');
+      const ctrl = new WallboxController({ toleranceMs: TOLERANCE_MS });
+      ctrl.setMode('pv');
+      const client = makeClient();
+      const t0 = 1_000_000;
+      const idle = makeState({ status: 'available' });
+      await ctrl.tick({ pvPower: 5500, consumptionPower: 500 }, idle, client, t0);
+      await ctrl.tick({ pvPower: 5500, consumptionPower: 500 }, idle, client, t0 + TOLERANCE_MS); // Start 1 → Meldung 1
+      // Ladung läuft wirklich → Merker wird zurückgesetzt
+      await ctrl.tick({ pvPower: 5500, consumptionPower: 500 }, makeState({ status: 'charging', chargingCurrentA: 7 }), client, t0 + TOLERANCE_MS + 20_000);
+      // Wolken → Stopp; später wieder Sonne → Start 2 → Meldung 2
+      const t1 = t0 + TOLERANCE_MS + 40_000;
+      await ctrl.tick({ pvPower: 5500, consumptionPower: 500 }, idle, client, t1);
+      await ctrl.tick({ pvPower: 5500, consumptionPower: 500 }, idle, client, t1 + TOLERANCE_MS);
+      expect(started).toHaveLength(2);
+    });
+
+    it('resets the started-dedupe when the vehicle is unplugged', async () => {
+      const started = listen<unknown>('wallbox:charging-started');
+      const ctrl = new WallboxController({ toleranceMs: TOLERANCE_MS });
+      ctrl.setMode('pv');
+      const client = makeClient();
+      const t0 = 1_000_000;
+      const idle = makeState({ status: 'available' });
+      await ctrl.tick({ pvPower: 5500, consumptionPower: 500 }, idle, client, t0);
+      await ctrl.tick({ pvPower: 5500, consumptionPower: 500 }, idle, client, t0 + TOLERANCE_MS); // Meldung 1
+      // Fahrzeug abgesteckt → Merker zurück
+      await ctrl.tick({ pvPower: 5500, consumptionPower: 500 }, makeState({ status: 'available', vehicleConnected: false }), client, t0 + TOLERANCE_MS + 20_000);
+      // wieder angesteckt, Überschuss da → nächster Start meldet wieder
+      const t1 = t0 + TOLERANCE_MS + 40_000;
+      await ctrl.tick({ pvPower: 5500, consumptionPower: 500 }, idle, client, t1);
+      await ctrl.tick({ pvPower: 5500, consumptionPower: 500 }, idle, client, t1 + TOLERANCE_MS);
+      expect(started).toHaveLength(2);
     });
   });
 });

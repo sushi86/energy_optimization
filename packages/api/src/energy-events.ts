@@ -37,6 +37,23 @@ export interface AutoRestoredEvent {
   batterySoc: number;
 }
 
+export interface WallboxChargingStartedEvent {
+  phases: 1 | 3;
+  currentA: number;
+  surplusW: number;
+}
+
+export interface WallboxChargingStoppedEvent {
+  surplusW: number;
+}
+
+export interface WallboxPhasesSwitchedEvent {
+  from: 1 | 3;
+  to: 1 | 3;
+  currentA: number;
+  surplusW: number;
+}
+
 interface EnergyEventMap {
   'pv:morning-briefing': [MorningBriefingEvent];
   'pv:production-ended': [ProductionEndedEvent];
@@ -44,6 +61,11 @@ interface EnergyEventMap {
   'controller:switched-to-manual': [SwitchedToManualEvent];
   'controller:manual-discharge': [ManualDischargeEvent];
   'controller:auto-restored': [AutoRestoredEvent];
+  'wallbox:charging-started': [WallboxChargingStartedEvent];
+  'wallbox:charging-stopped': [WallboxChargingStoppedEvent];
+  'wallbox:phases-switched': [WallboxPhasesSwitchedEvent];
+  'wallbox:vehicle-plugged': [];
+  'wallbox:vehicle-unplugged': [];
 }
 
 class EnergyEventEmitter extends EventEmitter {

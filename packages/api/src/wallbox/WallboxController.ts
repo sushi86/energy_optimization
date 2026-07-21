@@ -1,4 +1,5 @@
 import { MAX_CHARGING_CURRENT_A, MIN_CHARGING_CURRENT_A, type WallboxState } from './types.js';
+import { energyEvents } from '../energy-events.js';
 
 export type WallboxControllerMode = 'off' | 'pv' | 'manual';
 
@@ -40,6 +41,7 @@ export class WallboxController {
   private switchUpSince: number | null = null;
   private switchDownSince: number | null = null;
   private lastDetails: WallboxControllerDetails | null = null;
+  private startNotifiedPending = false;
 
   constructor(config: WallboxControllerDeps) {
     this.config = config;
@@ -62,6 +64,7 @@ export class WallboxController {
     this.sufficientSince = null;
     this.switchUpSince = null;
     this.switchDownSince = null;
+    this.startNotifiedPending = false;
   }
 
   updateConfig(partial: Partial<WallboxControllerDeps>): void {
@@ -149,6 +152,7 @@ export class WallboxController {
 
     if (isCharging) {
       this.sufficientSince = null;
+      this.startNotifiedPending = false;
       const phases = wallboxState.phases;
       const toleranceS = Math.round(this.config.toleranceMs / 1000);
 
@@ -160,6 +164,7 @@ export class WallboxController {
         if (client && now - this.insufficientSince >= this.config.toleranceMs) {
           await client.stopCharging();
           this.insufficientSince = null;
+          energyEvents.emit('wallbox:charging-stopped', { surplusW: Math.round(surplusW) });
         }
         this.lastDetails = {
           surplusW: Math.round(surplusW),
@@ -172,9 +177,11 @@ export class WallboxController {
         if (this.switchUpSince === null) this.switchUpSince = now;
         const elapsedS = Math.round((now - this.switchUpSince) / 1000);
         if (client && now - this.switchUpSince >= this.config.toleranceMs) {
+          const newCurrentA = targetCurrent(surplusW, 3);
           await client.setPhases(3);
-          await client.setChargingCurrent(targetCurrent(surplusW, 3));
+          await client.setChargingCurrent(newCurrentA);
           this.switchUpSince = null;
+          energyEvents.emit('wallbox:phases-switched', { from: 1, to: 3, currentA: newCurrentA, surplusW: Math.round(surplusW) });
         }
         this.lastDetails = {
           surplusW: Math.round(surplusW),
@@ -187,9 +194,11 @@ export class WallboxController {
         if (this.switchDownSince === null) this.switchDownSince = now;
         const elapsedS = Math.round((now - this.switchDownSince) / 1000);
         if (client && now - this.switchDownSince >= this.config.toleranceMs) {
+          const newCurrentA = targetCurrent(surplusW, 1);
           await client.setPhases(1);
-          await client.setChargingCurrent(targetCurrent(surplusW, 1));
+          await client.setChargingCurrent(newCurrentA);
           this.switchDownSince = null;
+          energyEvents.emit('wallbox:phases-switched', { from: 3, to: 1, currentA: newCurrentA, surplusW: Math.round(surplusW) });
         }
         this.lastDetails = {
           surplusW: Math.round(surplusW),
@@ -216,6 +225,7 @@ export class WallboxController {
       this.switchDownSince = null;
       if (!wallboxState.vehicleConnected) {
         this.sufficientSince = null;
+        this.startNotifiedPending = false;
         this.lastDetails = { surplusW: Math.round(surplusW), targetCurrentA: null, reason: 'Kein Fahrzeug verbunden' };
         return;
       }
@@ -225,10 +235,19 @@ export class WallboxController {
         const elapsedS = Math.round((now - this.sufficientSince) / 1000);
         const toleranceS = Math.round(this.config.toleranceMs / 1000);
         if (client && now - this.sufficientSince >= this.config.toleranceMs) {
+          const startCurrentA = targetCurrent(surplusW, startPhases);
           await client.setPhases(startPhases);
-          await client.setChargingCurrent(targetCurrent(surplusW, startPhases));
+          await client.setChargingCurrent(startCurrentA);
           await client.startCharging();
           this.sufficientSince = null;
+          if (!this.startNotifiedPending) {
+            this.startNotifiedPending = true;
+            energyEvents.emit('wallbox:charging-started', {
+              phases: startPhases,
+              currentA: startCurrentA,
+              surplusW: Math.round(surplusW),
+            });
+          }
         }
         this.lastDetails = {
           surplusW: Math.round(surplusW),
