@@ -50,3 +50,50 @@ describe('NotificationService — manual-mode notifications', () => {
     expect(push.payloads[0].body).toContain('50');
   });
 });
+
+describe('NotificationService — wallbox notifications', () => {
+  let push: FakePushService;
+
+  beforeEach(() => {
+    energyEvents.removeAllListeners();
+    push = new FakePushService();
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    new NotificationService(push as any);
+  });
+
+  it('sends a push when pv charging starts', () => {
+    energyEvents.emit('wallbox:charging-started', { phases: 3, currentA: 8, surplusW: 5600 });
+    expect(push.payloads).toHaveLength(1);
+    expect(push.payloads[0].title).toBe('Wallbox');
+    expect(push.payloads[0].tag).toBe('wallbox-charging');
+    expect(push.payloads[0].body).toBe('🔌 Ladung gestartet — 3-phasig mit 8 A (Überschuss 5600 W)');
+  });
+
+  it('sends a push when pv charging stops', () => {
+    energyEvents.emit('wallbox:charging-stopped', { surplusW: 800 });
+    expect(push.payloads).toHaveLength(1);
+    expect(push.payloads[0].tag).toBe('wallbox-charging');
+    expect(push.payloads[0].body).toBe('⏹️ Ladung gestoppt — Überschuss zu gering (800 W)');
+  });
+
+  it('sends a push when the phases are switched', () => {
+    energyEvents.emit('wallbox:phases-switched', { from: 3, to: 1, currentA: 13, surplusW: 3000 });
+    expect(push.payloads).toHaveLength(1);
+    expect(push.payloads[0].tag).toBe('wallbox-phases');
+    expect(push.payloads[0].body).toBe('⚡ Von 3- auf 1-phasig umgeschaltet (Überschuss 3000 W)');
+  });
+
+  it('sends a push when the vehicle is plugged in', () => {
+    energyEvents.emit('wallbox:vehicle-plugged');
+    expect(push.payloads).toHaveLength(1);
+    expect(push.payloads[0].tag).toBe('wallbox-vehicle');
+    expect(push.payloads[0].body).toBe('🚗 Fahrzeug angesteckt');
+  });
+
+  it('sends a push when the vehicle is unplugged', () => {
+    energyEvents.emit('wallbox:vehicle-unplugged');
+    expect(push.payloads).toHaveLength(1);
+    expect(push.payloads[0].tag).toBe('wallbox-vehicle');
+    expect(push.payloads[0].body).toBe('🚗 Fahrzeug abgesteckt');
+  });
+});

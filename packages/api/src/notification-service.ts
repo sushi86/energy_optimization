@@ -1,4 +1,4 @@
-import { energyEvents, type MorningBriefingEvent, type ProductionEndedEvent, type TemperatureHighEvent, type SwitchedToManualEvent, type ManualDischargeEvent, type AutoRestoredEvent } from './energy-events.js';
+import { energyEvents, type MorningBriefingEvent, type ProductionEndedEvent, type TemperatureHighEvent, type SwitchedToManualEvent, type ManualDischargeEvent, type AutoRestoredEvent, type WallboxChargingStartedEvent, type WallboxChargingStoppedEvent, type WallboxPhasesSwitchedEvent } from './energy-events.js';
 import type { PushService } from './push-service.js';
 
 function formatKwh(kwh: number): string {
@@ -13,6 +13,11 @@ export class NotificationService {
     energyEvents.on('controller:switched-to-manual', (event) => this.handleSwitchedToManual(event));
     energyEvents.on('controller:manual-discharge', (event) => this.handleManualDischarge(event));
     energyEvents.on('controller:auto-restored', (event) => this.handleAutoRestored(event));
+    energyEvents.on('wallbox:charging-started', (event) => this.handleWallboxChargingStarted(event));
+    energyEvents.on('wallbox:charging-stopped', (event) => this.handleWallboxChargingStopped(event));
+    energyEvents.on('wallbox:phases-switched', (event) => this.handleWallboxPhasesSwitched(event));
+    energyEvents.on('wallbox:vehicle-plugged', () => this.handleWallboxVehicle(true));
+    energyEvents.on('wallbox:vehicle-unplugged', () => this.handleWallboxVehicle(false));
     console.log('[notifications] Service started');
   }
 
@@ -77,6 +82,42 @@ export class NotificationService {
       body: `✅ Zurück auf Automatik — Akku bei ${event.batterySoc.toFixed(0)} % (Manuell-Schutz)`,
       url: '/',
       tag: 'auto-restored',
+    });
+  }
+
+  private handleWallboxChargingStarted(event: WallboxChargingStartedEvent): void {
+    void this.pushService.sendNotification({
+      title: 'Wallbox',
+      body: `🔌 Ladung gestartet — ${event.phases}-phasig mit ${event.currentA} A (Überschuss ${event.surplusW} W)`,
+      url: '/',
+      tag: 'wallbox-charging',
+    });
+  }
+
+  private handleWallboxChargingStopped(event: WallboxChargingStoppedEvent): void {
+    void this.pushService.sendNotification({
+      title: 'Wallbox',
+      body: `⏹️ Ladung gestoppt — Überschuss zu gering (${event.surplusW} W)`,
+      url: '/',
+      tag: 'wallbox-charging',
+    });
+  }
+
+  private handleWallboxPhasesSwitched(event: WallboxPhasesSwitchedEvent): void {
+    void this.pushService.sendNotification({
+      title: 'Wallbox',
+      body: `⚡ Von ${event.from}- auf ${event.to}-phasig umgeschaltet (Überschuss ${event.surplusW} W)`,
+      url: '/',
+      tag: 'wallbox-phases',
+    });
+  }
+
+  private handleWallboxVehicle(plugged: boolean): void {
+    void this.pushService.sendNotification({
+      title: 'Wallbox',
+      body: plugged ? '🚗 Fahrzeug angesteckt' : '🚗 Fahrzeug abgesteckt',
+      url: '/',
+      tag: 'wallbox-vehicle',
     });
   }
 }
