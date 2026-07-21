@@ -10,6 +10,9 @@ interface WallboxStatusResponse {
   // Modbus connection after startup — no state fields are available yet.
   initializing?: boolean;
   vehicleConnected: boolean;
+  error: string | null;
+  disconnectedSinceMs: number | null;
+  consecutiveFailures: number;
   mode: WallboxMode;
   controllerDetails: {
     surplusW: number;
@@ -32,6 +35,14 @@ const modeColors: Record<WallboxMode, string> = {
   pv: 'bg-[#10EFD8]/20 text-[#10EFD8] border-[#10EFD8]/30',
   manual: 'bg-yellow-500/20 text-yellow-400 border-yellow-500/30',
 };
+
+function formatDuration(ms: number): string {
+  const totalSeconds = Math.max(0, Math.floor(ms / 1000));
+  if (totalSeconds < 60) return `${totalSeconds}s`;
+  const minutes = Math.floor(totalSeconds / 60);
+  const seconds = totalSeconds % 60;
+  return `${minutes}m ${seconds}s`;
+}
 
 export default function WallboxControlCard({ onModeChange }: { onModeChange?: (mode: WallboxMode) => void }) {
   const [status, setStatus] = useState<WallboxStatusResponse | null>(null);
@@ -107,7 +118,7 @@ export default function WallboxControlCard({ onModeChange }: { onModeChange?: (m
                 ? error
                 : 'Verbindet…'}
         </span>
-        {status && !status.initializing && (
+        {status?.connected && (
           <span
             className={`text-xs px-2 py-0.5 rounded-full border ${
               status.vehicleConnected
@@ -119,6 +130,15 @@ export default function WallboxControlCard({ onModeChange }: { onModeChange?: (m
           </span>
         )}
       </div>
+      {status && !status.connected && !status.initializing && (
+        <p className="text-xs text-[var(--text-secondary)] mb-3">
+          {status.error ?? 'Verbindungsfehler'}
+          {status.disconnectedSinceMs != null &&
+            ` — seit ${formatDuration(Date.now() - status.disconnectedSinceMs)} getrennt`}
+          {status.consecutiveFailures > 0 &&
+            ` — ${status.consecutiveFailures} Versuch${status.consecutiveFailures === 1 ? '' : 'e'} fehlgeschlagen`}
+        </p>
+      )}
       <div className="flex gap-1.5">
         {(['off', 'pv', 'manual'] as const).map((m) => {
           const active = status?.mode === m;
