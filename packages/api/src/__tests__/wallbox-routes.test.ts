@@ -158,6 +158,30 @@ describe('wallbox routes', () => {
     await failingApp.close();
   });
 
+  it('GET /api/wallbox/status reports diagnostics when the very first poll ever attempted fails', async () => {
+    const coldClient = createWallboxClient({ host: '192.168.1.254', port: 502, unitId: 255 });
+    await coldClient.connect();
+    // Use a persistent rejection (not "once") because heartbeat timers from other
+    // tests' wallboxClient instances share this same mock and can steal a one-shot
+    // rejection before our own getState() call reaches it.
+    mockReadHoldingRegisters.mockRejectedValue(new Error('ECONNRESET'));
+    await coldClient.getState().catch(() => undefined);
+    mockReadHoldingRegisters.mockResolvedValue(regResponse([1]));
+    const coldApp = buildServer({ testing: true, wallboxClient: coldClient });
+    await coldApp.ready();
+
+    const res = await coldApp.inject({ method: 'GET', url: '/api/wallbox/status' });
+    expect(res.statusCode).toBe(200);
+    const body = res.json();
+    expect(body.initializing).toBe(true);
+    expect(body.connected).toBe(false);
+    expect(body.error).toBe('ECONNRESET');
+    expect(body.disconnectedSinceMs).not.toBeNull();
+    expect(body.consecutiveFailures).toBe(1);
+
+    await coldApp.close();
+  });
+
   it('GET /api/wallbox/status includes controllerDetails as null when no AppState is wired', async () => {
     const res = await app.inject({ method: 'GET', url: '/api/wallbox/status' });
     expect(res.json().controllerDetails).toBeNull();
