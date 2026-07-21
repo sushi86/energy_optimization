@@ -290,8 +290,128 @@ describe('WallboxController', () => {
       expect(ctrl.getLastDetails()).toEqual({
         surplusW: 5000,
         targetCurrentA: 7,
-        reason: 'Lädt mit 7 A (Überschuss 5000 W)',
+        reason: 'Lädt 3-phasig mit 7 A (Überschuss 5000 W)',
       });
+    });
+  });
+
+  describe('pv mode — phase switching while charging', () => {
+    it('switches 1→3 after surplus stays >= 4440 W for the tolerance window', async () => {
+      const ctrl = new WallboxController({ toleranceMs: TOLERANCE_MS });
+      ctrl.setMode('pv');
+      const client = makeClient();
+      const state = makeState({ status: 'charging', phases: 1, chargingCurrentA: 16 });
+      const t0 = 1_000_000;
+      await ctrl.tick({ pvPower: 6500, consumptionPower: 500 }, state, client, t0); // surplus 6000
+      expect(client.setPhases).not.toHaveBeenCalled();
+
+      await ctrl.tick({ pvPower: 6500, consumptionPower: 500 }, state, client, t0 + TOLERANCE_MS);
+      expect(client.setPhases).toHaveBeenCalledWith(3);
+      expect(client.setChargingCurrent).toHaveBeenCalledWith(8); // floor(6000 / 690) = 8
+      expect(client.stopCharging).not.toHaveBeenCalled();
+      expect(client.startCharging).not.toHaveBeenCalled(); // direct register write, no restart
+    });
+
+    it('resets the switch-up timer when surplus drops below 4440 W before the window elapses', async () => {
+      const ctrl = new WallboxController({ toleranceMs: TOLERANCE_MS });
+      ctrl.setMode('pv');
+      const client = makeClient();
+      const state = makeState({ status: 'charging', phases: 1, chargingCurrentA: 16 });
+      const t0 = 1_000_000;
+      await ctrl.tick({ pvPower: 6500, consumptionPower: 500 }, state, client, t0);
+      await ctrl.tick({ pvPower: 3500, consumptionPower: 500 }, state, client, t0 + 60_000); // surplus 3000 < 4440
+      await ctrl.tick({ pvPower: 6500, consumptionPower: 500 }, state, client, t0 + TOLERANCE_MS + 1);
+      expect(client.setPhases).not.toHaveBeenCalled();
+    });
+
+    it('switches 3→1 instead of stopping when surplus stays in 1380–4140 W for the tolerance window', async () => {
+      const ctrl = new WallboxController({ toleranceMs: TOLERANCE_MS });
+      ctrl.setMode('pv');
+      const client = makeClient();
+      const state = makeState({ status: 'charging', phases: 3, chargingCurrentA: 6 });
+      const t0 = 1_000_000;
+      await ctrl.tick({ pvPower: 3500, consumptionPower: 500 }, state, client, t0); // surplus 3000
+      expect(client.setPhases).not.toHaveBeenCalled();
+
+      await ctrl.tick({ pvPower: 3500, consumptionPower: 500 }, state, client, t0 + TOLERANCE_MS);
+      expect(client.setPhases).toHaveBeenCalledWith(1);
+      expect(client.setChargingCurrent).toHaveBeenCalledWith(13); // floor(3000 / 230) = 13
+      expect(client.stopCharging).not.toHaveBeenCalled();
+    });
+
+    it('stays 3-phase in the 4140–4440 W hysteresis band and keeps regulating the current', async () => {
+      const ctrl = new WallboxController({ toleranceMs: TOLERANCE_MS });
+      ctrl.setMode('pv');
+      const client = makeClient();
+      const state = makeState({ status: 'charging', phases: 3, chargingCurrentA: 7 });
+      const t0 = 1_000_000;
+      await ctrl.tick({ pvPower: 4700, consumptionPower: 500 }, state, client, t0); // surplus 4200
+      await ctrl.tick({ pvPower: 4700, consumptionPower: 500 }, state, client, t0 + TOLERANCE_MS);
+      expect(client.setPhases).not.toHaveBeenCalled();
+      expect(client.stopCharging).not.toHaveBeenCalled();
+      expect(client.setChargingCurrent).toHaveBeenCalledWith(6); // floor(4200 / 690) = 6
+    });
+
+    it('stays 1-phase below 4440 W and regulates with the 1-phase divisor (230 W/A)', async () => {
+      const ctrl = new WallboxController({ toleranceMs: TOLERANCE_MS });
+      ctrl.setMode('pv');
+      const client = makeClient();
+      const state = makeState({ status: 'charging', phases: 1, chargingCurrentA: 6 });
+      const t0 = 1_000_000;
+      await ctrl.tick({ pvPower: 3500, consumptionPower: 500 }, state, client, t0); // surplus 3000
+      await ctrl.tick({ pvPower: 3500, consumptionPower: 500 }, state, client, t0 + TOLERANCE_MS);
+      expect(client.setPhases).not.toHaveBeenCalled();
+      expect(client.setChargingCurrent).toHaveBeenCalledWith(13); // floor(3000 / 230) = 13
+      expect(ctrl.getLastDetails()).toEqual({ surplusW: 3000, targetCurrentA: 13, reason: 'Lädt 1-phasig mit 13 A (Überschuss 3000 W)' });
+    });
+
+    it('reports the switch-up countdown while the timer runs', async () => {
+      const ctrl = new WallboxController({ toleranceMs: TOLERANCE_MS });
+      ctrl.setMode('pv');
+      const client = makeClient();
+      const state = makeState({ status: 'charging', phases: 1, chargingCurrentA: 16 });
+      const t0 = 1_000_000;
+      await ctrl.tick({ pvPower: 6500, consumptionPower: 500 }, state, client, t0);
+      await ctrl.tick({ pvPower: 6500, consumptionPower: 500 }, state, client, t0 + 45_000);
+      expect(ctrl.getLastDetails()).toEqual({ surplusW: 6000, targetCurrentA: null, reason: 'Überschuss reicht für 3-phasig seit 45s — schaltet um nach 120s' });
+    });
+
+    it('reports the switch-down countdown while the timer runs', async () => {
+      const ctrl = new WallboxController({ toleranceMs: TOLERANCE_MS });
+      ctrl.setMode('pv');
+      const client = makeClient();
+      const state = makeState({ status: 'charging', phases: 3, chargingCurrentA: 6 });
+      const t0 = 1_000_000;
+      await ctrl.tick({ pvPower: 3500, consumptionPower: 500 }, state, client, t0);
+      await ctrl.tick({ pvPower: 3500, consumptionPower: 500 }, state, client, t0 + 30_000);
+      expect(ctrl.getLastDetails()).toEqual({ surplusW: 3000, targetCurrentA: null, reason: 'Überschuss reicht nur für 1-phasig seit 30s — schaltet um nach 120s' });
+    });
+
+    it('stops from 1-phase charging when surplus stays below 1380 W for the tolerance window', async () => {
+      const ctrl = new WallboxController({ toleranceMs: TOLERANCE_MS });
+      ctrl.setMode('pv');
+      const client = makeClient();
+      const state = makeState({ status: 'charging', phases: 1, chargingCurrentA: 6 });
+      const t0 = 1_000_000;
+      await ctrl.tick({ pvPower: 1300, consumptionPower: 500 }, state, client, t0); // surplus 800
+      expect(client.stopCharging).not.toHaveBeenCalled();
+
+      await ctrl.tick({ pvPower: 1300, consumptionPower: 500 }, state, client, t0 + TOLERANCE_MS);
+      expect(client.stopCharging).toHaveBeenCalledTimes(1);
+      expect(client.setPhases).not.toHaveBeenCalled();
+    });
+
+    it('setMode resets the switch timers', async () => {
+      const ctrl = new WallboxController({ toleranceMs: TOLERANCE_MS });
+      ctrl.setMode('pv');
+      const client = makeClient();
+      const state = makeState({ status: 'charging', phases: 1, chargingCurrentA: 16 });
+      const t0 = 1_000_000;
+      await ctrl.tick({ pvPower: 6500, consumptionPower: 500 }, state, client, t0);
+      ctrl.setMode('off');
+      ctrl.setMode('pv');
+      await ctrl.tick({ pvPower: 6500, consumptionPower: 500 }, state, client, t0 + TOLERANCE_MS);
+      expect(client.setPhases).not.toHaveBeenCalled(); // timer restarted at t0 + TOLERANCE_MS
     });
   });
 
@@ -327,7 +447,7 @@ describe('WallboxController', () => {
       expect(ctrl.getLastDetails()).toEqual({
         surplusW: 6000,
         targetCurrentA: 8,
-        reason: 'Lädt mit 8 A (Überschuss 6000 W)',
+        reason: 'Lädt 3-phasig mit 8 A (Überschuss 6000 W)',
       });
     });
 
@@ -360,7 +480,7 @@ describe('WallboxController', () => {
       const client = makeClient();
       const state = makeState({ status: 'charging', chargingCurrentA: 8 });
       await ctrl.tick({ pvPower: 6500, consumptionPower: 500 }, state, client, 1_000_000);
-      expect(ctrl.getLastDetails()).toEqual({ surplusW: 6000, targetCurrentA: 8, reason: 'Lädt mit 8 A (Überschuss 6000 W)' });
+      expect(ctrl.getLastDetails()).toEqual({ surplusW: 6000, targetCurrentA: 8, reason: 'Lädt 3-phasig mit 8 A (Überschuss 6000 W)' });
     });
 
     it('reports the countdown while charging with insufficient surplus', async () => {
