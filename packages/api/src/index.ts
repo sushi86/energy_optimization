@@ -101,6 +101,10 @@ async function main() {
       port: config.WALLBOX_PORT,
       unitId: config.WALLBOX_UNIT_ID,
     });
+    // Register the client right away so the API can tell "configured but still
+    // connecting" (status route reports initializing) apart from "not configured".
+    wallboxClient = client;
+    appState.setWallboxClient(client);
     // Connects in the background with retries so a wallbox that's unreachable at
     // startup (e.g. still booting, a transient network hiccup) doesn't disable the
     // integration for the rest of the process lifetime — it just keeps retrying.
@@ -113,8 +117,6 @@ async function main() {
         ),
     }).then(() => {
       client.startPolling(config.WALLBOX_POLL_INTERVAL_MS, () => {});
-      wallboxClient = client;
-      appState.setWallboxClient(client);
       console.log('[energy-control] EM2GO wallbox (Modbus) enabled');
     });
   }

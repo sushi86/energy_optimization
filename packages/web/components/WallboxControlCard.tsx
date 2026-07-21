@@ -1,12 +1,14 @@
 'use client';
 
 import { useEffect, useState, useCallback } from 'react';
-import { EvCharger } from 'lucide-react';
 
 type WallboxMode = 'off' | 'pv' | 'manual';
 
 interface WallboxStatusResponse {
   connected: boolean;
+  // Backend has the wallbox configured but is still establishing the first
+  // Modbus connection after startup — no state fields are available yet.
+  initializing?: boolean;
   vehicleConnected: boolean;
   mode: WallboxMode;
   controllerDetails: { surplusW: number; targetCurrentA: number | null; reason: string } | null;
@@ -29,8 +31,13 @@ export default function WallboxControlCard({ onModeChange }: { onModeChange?: (m
   const [error, setError] = useState<string | null>(null);
 
   const refresh = useCallback(async () => {
+    // A hung request (e.g. the backend still reconnecting to the wallbox) must not
+    // leave this component waiting forever for its first response — bound it so a
+    // stall surfaces as a visible error instead of the card just never appearing.
+    const controller = new AbortController();
+    const abortTimer = setTimeout(() => controller.abort(), 4000);
     try {
-      const res = await fetch('/api/wallbox/status');
+      const res = await fetch('/api/wallbox/status', { signal: controller.signal });
       if (!res.ok) {
         setError((await res.json()).error ?? `HTTP ${res.status}`);
         return;
@@ -41,12 +48,16 @@ export default function WallboxControlCard({ onModeChange }: { onModeChange?: (m
       onModeChange?.(data.mode);
     } catch {
       setError('Verbindung fehlgeschlagen');
+    } finally {
+      clearTimeout(abortTimer);
     }
   }, [onModeChange]);
 
   useEffect(() => {
     void refresh();
-    const timer = setInterval(() => void refresh(), 5000);
+    // 1s so the live surplus/reason text (incl. the ticking "seit Ns" counters)
+    // stays in sync with the backend, which now updates on every MQTT packet.
+    const timer = setInterval(() => void refresh(), 1000);
     return () => clearInterval(timer);
   }, [refresh]);
 
@@ -61,42 +72,44 @@ export default function WallboxControlCard({ onModeChange }: { onModeChange?: (m
     void refresh();
   };
 
-  if (error && !status) {
-    return (
-      <div className="rounded-xl border border-[var(--border)] bg-[var(--bg-card)] p-5 mb-4">
-        <p className="text-sm text-[var(--text-secondary)] flex items-center gap-2"><EvCharger size={14} /> Wallbox-Steuerung</p>
-        <p className="text-sm text-red-400 mt-2">{error}</p>
-      </div>
-    );
-  }
-
-  if (!status) return null;
-
+  // The card itself must always render — even before the first response ever
+  // arrives, while the backend is still (re)connecting to the wallbox, or when a
+  // request fails — so it never silently vanishes from the dashboard.
   return (
     <div className="rounded-xl border border-[var(--border)] bg-[var(--bg-card)] p-5 mb-4">
       <div className="flex items-center justify-between mb-3">
         <span
           className={`text-xs px-2 py-0.5 rounded-full border ${
-            status.connected
+            status?.connected
               ? 'bg-green-500/20 text-green-400 border-green-500/30'
-              : 'bg-red-500/20 text-red-400 border-red-500/30'
+              : status?.initializing
+                ? 'bg-yellow-500/20 text-yellow-400 border-yellow-500/30'
+                : 'bg-red-500/20 text-red-400 border-red-500/30'
           }`}
         >
-          {status.connected ? 'Modbus verbunden' : 'Modbus getrennt'}
+          {status?.connected
+            ? 'Modbus verbunden'
+            : status?.initializing
+              ? 'Initialisiere…'
+              : error
+                ? error
+                : 'Verbindet…'}
         </span>
-        <span
-          className={`text-xs px-2 py-0.5 rounded-full border ${
-            status.vehicleConnected
-              ? 'bg-blue-500/20 text-blue-400 border-blue-500/30'
-              : 'bg-transparent text-[var(--text-secondary)] border-[var(--border)]'
-          }`}
-        >
-          {status.vehicleConnected ? 'Fahrzeug verbunden' : 'Kein Fahrzeug'}
-        </span>
+        {status && !status.initializing && (
+          <span
+            className={`text-xs px-2 py-0.5 rounded-full border ${
+              status.vehicleConnected
+                ? 'bg-blue-500/20 text-blue-400 border-blue-500/30'
+                : 'bg-transparent text-[var(--text-secondary)] border-[var(--border)]'
+            }`}
+          >
+            {status.vehicleConnected ? 'Fahrzeug verbunden' : 'Kein Fahrzeug'}
+          </span>
+        )}
       </div>
       <div className="flex gap-1.5">
         {(['off', 'pv', 'manual'] as const).map((m) => {
-          const active = status.mode === m;
+          const active = status?.mode === m;
           const colorClass = active
             ? modeColors[m]
             : 'bg-transparent text-[var(--text-secondary)] border-[var(--border)] hover:text-[var(--text-primary)] hover:border-[var(--text-secondary)]';
@@ -104,14 +117,15 @@ export default function WallboxControlCard({ onModeChange }: { onModeChange?: (m
             <button
               key={m}
               onClick={() => void changeMode(m)}
-              className={`px-3 py-1 rounded-full text-sm font-medium border transition-colors cursor-pointer ${colorClass}`}
+              disabled={!status}
+              className={`px-3 py-1 rounded-full text-sm font-medium border transition-colors cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed ${colorClass}`}
             >
               {modeLabels[m]}
             </button>
           );
         })}
       </div>
-      {status.mode === 'pv' && status.controllerDetails && (
+      {status?.mode === 'pv' && status.controllerDetails && (
         <div className="mt-3 pt-3 border-t border-[var(--border)] text-xs space-y-1">
           <div className="flex justify-between gap-4">
             <span className="text-[var(--text-secondary)]">Überschuss</span>

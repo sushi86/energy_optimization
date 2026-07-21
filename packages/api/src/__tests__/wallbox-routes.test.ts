@@ -40,8 +40,29 @@ describe('wallbox routes', () => {
     mockReadHoldingRegisters.mockResolvedValue(regResponse([1]));
     const wallboxClient = createWallboxClient({ host: '192.168.1.254', port: 502, unitId: 255 });
     await wallboxClient.connect();
+    // Prime the state cache the way the background poller would — the status route
+    // serves only cached state and never issues Modbus traffic itself.
+    await wallboxClient.getState();
     app = buildServer({ testing: true, wallboxClient });
     await app.ready();
+  });
+
+  it('GET /api/wallbox/status reports initializing before the first poll has cached a state', async () => {
+    const coldClient = createWallboxClient({ host: '192.168.1.254', port: 502, unitId: 255 });
+    await coldClient.connect();
+    const coldApp = buildServer({ testing: true, wallboxClient: coldClient });
+    await coldApp.ready();
+
+    const reads = mockReadHoldingRegisters.mock.calls.length;
+    const res = await coldApp.inject({ method: 'GET', url: '/api/wallbox/status' });
+    expect(res.statusCode).toBe(200);
+    expect(res.json().initializing).toBe(true);
+    expect(res.json().connected).toBe(false);
+    // No fresh Modbus read may be triggered by the HTTP request — a box that is
+    // unreachable during startup would otherwise pile up state reads behind the lock.
+    expect(mockReadHoldingRegisters.mock.calls.length).toBe(reads);
+
+    await coldApp.close();
   });
 
   it('GET /api/wallbox/status returns the current state', async () => {

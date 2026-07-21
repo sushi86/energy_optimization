@@ -227,6 +227,53 @@ describe('WallboxController', () => {
     });
   });
 
+  describe('updateDetails', () => {
+    it('never calls any client method, even when the tolerance window has elapsed', () => {
+      const ctrl = new WallboxController({ toleranceMs: TOLERANCE_MS });
+      ctrl.setMode('pv');
+      const client = makeClient();
+      const state = makeState({ status: 'charging', chargingCurrentA: 6 });
+      const t0 = 1_000_000;
+      // Start the insufficient-surplus timer via a real tick (client present, but
+      // tolerance not yet elapsed so no action is taken).
+      ctrl.tick({ pvPower: 1000, consumptionPower: 500 }, state, client, t0);
+
+      // Repeated live updateDetails() calls, well past the tolerance window, must
+      // never touch the wallbox — only the gated tick() may act on it.
+      ctrl.updateDetails({ pvPower: 1000, consumptionPower: 500 }, state, t0 + TOLERANCE_MS);
+      ctrl.updateDetails({ pvPower: 1000, consumptionPower: 500 }, state, t0 + TOLERANCE_MS + 5000);
+      expect(client.stopCharging).not.toHaveBeenCalled();
+      expect(client.startCharging).not.toHaveBeenCalled();
+      expect(client.setChargingCurrent).not.toHaveBeenCalled();
+      expect(client.setPhases).not.toHaveBeenCalled();
+
+      // But the displayed elapsed-seconds counter does keep advancing live.
+      expect(ctrl.getLastDetails()?.reason).toBe('Überschuss unzureichend seit 125s — stoppt nach 120s');
+    });
+
+    it('updates surplusW and reason immediately for a fresh data point, without needing tick()', () => {
+      const ctrl = new WallboxController({ toleranceMs: TOLERANCE_MS });
+      ctrl.setMode('pv');
+      const state = makeState({ status: 'charging', chargingCurrentA: 8 });
+      ctrl.updateDetails({ pvPower: 6500, consumptionPower: 500 }, state, 1_000_000);
+      expect(ctrl.getLastDetails()).toEqual({
+        surplusW: 6000,
+        targetCurrentA: 8,
+        reason: 'Lädt mit 8 A (Überschuss 6000 W)',
+      });
+    });
+
+    it('is a no-op in off and manual mode', () => {
+      const ctrl = new WallboxController({ toleranceMs: TOLERANCE_MS });
+      ctrl.updateDetails({ pvPower: 8000, consumptionPower: 500 }, makeState({ status: 'charging' }));
+      expect(ctrl.getLastDetails()).toBeNull();
+
+      ctrl.setMode('manual');
+      ctrl.updateDetails({ pvPower: 8000, consumptionPower: 500 }, makeState({ status: 'available' }));
+      expect(ctrl.getLastDetails()).toBeNull();
+    });
+  });
+
   describe('getLastDetails', () => {
     it('returns null in off and manual mode', async () => {
       const ctrl = new WallboxController({ toleranceMs: TOLERANCE_MS });

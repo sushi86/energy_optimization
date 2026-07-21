@@ -51,6 +51,7 @@ export class AppState {
   private config: AppStateOptions;
   private regulationTimer: ReturnType<typeof setInterval> | null = null;
   private forecastSolarTimer: ReturnType<typeof setInterval> | null = null;
+  private wallboxDetailsTimer: ReturnType<typeof setInterval> | null = null;
   private pvSettingsPath: string;
   private configOverridesPath: string;
   private lastRegulationTime: Date = new Date();
@@ -113,7 +114,24 @@ export class AppState {
       void state.regulate();
     });
 
+    // Keep the wallbox debug/status text (surplus, reason, elapsed-seconds counters)
+    // live on every incoming Victron data packet — this only recomputes display
+    // details, it never talks to the wallbox itself. Actual control decisions
+    // (start/stop/current) stay gated to the regulationIntervalMs tick below.
+    state.mqtt.on('stateChange', () => {
+      state.updateWallboxDetails();
+    });
+
     return state;
+  }
+
+  private updateWallboxDetails(): void {
+    if (!this.wallboxClient) return;
+    const systemState = this.mqtt.getState();
+    this.wallboxController.updateDetails(
+      { pvPower: systemState.pvPower, consumptionPower: systemState.consumptionPower },
+      this.wallboxClient.getLastState(),
+    );
   }
 
   startRegulation(): void {
@@ -128,6 +146,11 @@ export class AppState {
     this.forecastSolarTimer = setInterval(() => {
       void this.forecastSolar.refresh();
     }, 30 * 60 * 1000);
+    // Independent of new MQTT data: keeps the "seit Ns" countdown in the wallbox
+    // debug text ticking every second even while PV/consumption values are stable.
+    this.wallboxDetailsTimer = setInterval(() => {
+      this.updateWallboxDetails();
+    }, 1000);
   }
 
   getRegulationInfo(): { lastRegulationTime: Date; intervalMs: number } {
@@ -385,6 +408,7 @@ export class AppState {
   async stop(): Promise<void> {
     if (this.regulationTimer) clearInterval(this.regulationTimer);
     if (this.forecastSolarTimer) clearInterval(this.forecastSolarTimer);
+    if (this.wallboxDetailsTimer) clearInterval(this.wallboxDetailsTimer);
     this.vrm.stop();
     await this.mqtt.stop();
   }
