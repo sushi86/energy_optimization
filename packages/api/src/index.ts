@@ -47,7 +47,6 @@ async function main() {
     forecastCorrectionOverride: null,
     consumptionDayW: 500,
     consumptionNightW: 350,
-    multiplusRatedPowerW: 4000,
     manualModeFloorPercent: config.MANUAL_MODE_FLOOR_PERCENT,
     wallboxPvToleranceMinutes: config.WALLBOX_PV_TOLERANCE_MINUTES,
   });

@@ -57,7 +57,6 @@ describe('API Endpoints', () => {
       forecastCorrectionOverride: null,
       consumptionDayW: 500,
       consumptionNightW: 350,
-      multiplusRatedPowerW: 4000,
       manualModeFloorPercent: 50,
       wallboxPvToleranceMinutes: 5,
       dataDir: tmpDir,

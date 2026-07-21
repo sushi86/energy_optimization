@@ -1,7 +1,7 @@
 import { MqttService } from './mqtt-service.js';
 import { VrmService } from './vrm-service.js';
 import { Controller, type ControllerDeps } from './controller.js';
-import { WallboxController } from './wallbox/WallboxController.js';
+import { WallboxController, type WallboxControllerDeps } from './wallbox/WallboxController.js';
 import type { WallboxClient } from './wallbox/WallboxClient.js';
 import { ForecastSolarService } from './forecast-solar-service.js';
 import { computeEnsembleForecast } from './ensemble-forecast.js';
@@ -36,9 +36,9 @@ export interface AppStateOptions {
   forecastCorrectionOverride: number | null;
   consumptionDayW: number;
   consumptionNightW: number;
-  multiplusRatedPowerW: number;
   manualModeFloorPercent: number;
   wallboxPvToleranceMinutes?: number;
+  wallboxAcReserveW?: number;
   /** Optional override for the data directory (used by tests for isolation) */
   dataDir?: string;
 }
@@ -88,9 +88,7 @@ export class AppState {
       activeMorningDischarge: options.activeMorningDischarge ?? false,
       activeMorningDischargeMinSocPercent: options.activeMorningDischargeMinSocPercent ?? 5,
     });
-    this.wallboxController = new WallboxController({
-      toleranceMs: (options.wallboxPvToleranceMinutes ?? 2) * 60_000,
-    });
+    this.wallboxController = new WallboxController(this.buildWallboxControllerConfig());
     const dataDir = options.dataDir ?? resolve(dirname(fileURLToPath(import.meta.url)), '../../../data');
     this.pvSettingsPath = resolve(dataDir, 'pv-settings.json');
     this.configOverridesPath = resolve(dataDir, 'config-overrides.json');
@@ -332,7 +330,7 @@ export class AppState {
     }
     Object.assign(this.config, updates);
     this.controller.updateConfig(this.buildControllerConfig());
-    this.wallboxController.updateConfig({ toleranceMs: (this.config.wallboxPvToleranceMinutes ?? 2) * 60_000 });
+    this.wallboxController.updateConfig(this.buildWallboxControllerConfig());
     this.saveConfigOverrides();
     // Apply the new config immediately instead of waiting up to regulationIntervalMs
     // for the next tick.
@@ -355,13 +353,20 @@ export class AppState {
     };
   }
 
+  private buildWallboxControllerConfig(): WallboxControllerDeps {
+    return {
+      toleranceMs: (this.config.wallboxPvToleranceMinutes ?? 2) * 60_000,
+      acLoadCapW: this.config.maxAcPowerW - (this.config.wallboxAcReserveW ?? 1000),
+    };
+  }
+
   private loadConfigOverrides(): void {
     try {
       const content = fs.readFileSync(this.configOverridesPath, 'utf-8');
       const overrides = JSON.parse(content) as Partial<AppStateOptions>;
       Object.assign(this.config, overrides);
       this.controller.updateConfig(this.buildControllerConfig());
-      this.wallboxController.updateConfig({ toleranceMs: (this.config.wallboxPvToleranceMinutes ?? 2) * 60_000 });
+      this.wallboxController.updateConfig(this.buildWallboxControllerConfig());
       console.log('[config] Loaded overrides from disk:', Object.keys(overrides).join(', '));
     } catch {
       // No overrides file yet — use defaults
@@ -386,9 +391,9 @@ export class AppState {
       forecastCorrectionOverride: this.config.forecastCorrectionOverride,
       consumptionDayW: this.config.consumptionDayW,
       consumptionNightW: this.config.consumptionNightW,
-      multiplusRatedPowerW: this.config.multiplusRatedPowerW,
       manualModeFloorPercent: this.config.manualModeFloorPercent,
       wallboxPvToleranceMinutes: this.config.wallboxPvToleranceMinutes,
+      wallboxAcReserveW: this.config.wallboxAcReserveW,
     };
     try {
       const dir = dirname(this.configOverridesPath);

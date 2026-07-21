@@ -53,6 +53,9 @@ let temperatureHighEmitted = false;
 
 const TEMPERATURE_HIGH_THRESHOLD = 35;
 
+// 3 Multiplus-Geräte teilen sich das AC-Limit; die Auslastungsanzeige rechnet pro Gerät.
+const MULTIPLUS_COUNT = 3;
+
 async function fetchMpptTemperature(): Promise<void> {
   try {
     const res = await fetch('http://192.168.1.176/rpc/Temperature.GetStatus?id=101');
@@ -202,7 +205,7 @@ export function buildServer(options: ServerOptions = {}): FastifyInstance {
         priceOptimizationEnabled: config.priceOptimization,
         allowFeedInNegativePrice: config.allowFeedInNegativePrice,
         forecastCorrectionOverride: config.forecastCorrectionOverride,
-        multiplusRatedPowerW: config.multiplusRatedPowerW,
+        multiplusRatedPowerW: config.maxAcPowerW / MULTIPLUS_COUNT,
         maxAcPowerW: config.maxAcPowerW,
         regulation: {
           lastTime: state.getRegulationInfo().lastRegulationTime.toISOString(),
@@ -313,6 +316,7 @@ export function buildServer(options: ServerOptions = {}): FastifyInstance {
       activeMorningDischargeMinSocPercent: c.activeMorningDischargeMinSocPercent,
       manualModeFloorPercent: c.manualModeFloorPercent,
       wallboxPvToleranceMinutes: c.wallboxPvToleranceMinutes,
+      wallboxAcReserveW: c.wallboxAcReserveW,
     };
   });
 
@@ -337,6 +341,7 @@ export function buildServer(options: ServerOptions = {}): FastifyInstance {
       activeMorningDischargeMinSocPercent: updated.activeMorningDischargeMinSocPercent,
       manualModeFloorPercent: updated.manualModeFloorPercent,
       wallboxPvToleranceMinutes: updated.wallboxPvToleranceMinutes,
+      wallboxAcReserveW: updated.wallboxAcReserveW,
     };
   });
 
