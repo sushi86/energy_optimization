@@ -413,6 +413,40 @@ describe('WallboxController', () => {
       await ctrl.tick({ pvPower: 6500, consumptionPower: 500 }, state, client, t0 + TOLERANCE_MS);
       expect(client.setPhases).not.toHaveBeenCalled(); // timer restarted at t0 + TOLERANCE_MS
     });
+
+    it('resets the switch-down timer when charging pauses, so a later dip waits the full window again', async () => {
+      const ctrl = new WallboxController({ toleranceMs: TOLERANCE_MS });
+      ctrl.setMode('pv');
+      const client = makeClient();
+      const charging3p = makeState({ status: 'charging', phases: 3, chargingCurrentA: 6 });
+      const t0 = 1_000_000;
+      // Surplus dips into the switch-down band (3000 W) and the timer starts.
+      await ctrl.tick({ pvPower: 3500, consumptionPower: 500 }, charging3p, client, t0);
+      // The EV pauses charging on its own (status leaves 'charging'), surplus unchanged.
+      const paused = makeState({ status: 'connected', phases: 3 });
+      await ctrl.tick({ pvPower: 3500, consumptionPower: 500 }, paused, client, t0 + 60_000);
+      // Charging has resumed; surplus dips into the band again much later. Without the
+      // pause-reset, the stale timer from t0 would fire the 3→1 switch immediately.
+      await ctrl.tick({ pvPower: 3500, consumptionPower: 500 }, charging3p, client, t0 + TOLERANCE_MS + 60_000);
+      expect(client.setPhases).not.toHaveBeenCalled();
+    });
+
+    it('resets the switch-up timer when charging pauses, so a later surge waits the full window again', async () => {
+      const ctrl = new WallboxController({ toleranceMs: TOLERANCE_MS });
+      ctrl.setMode('pv');
+      const client = makeClient();
+      const charging1p = makeState({ status: 'charging', phases: 1, chargingCurrentA: 16 });
+      const t0 = 1_000_000;
+      // Surplus rises into the switch-up band (6000 W) and the timer starts.
+      await ctrl.tick({ pvPower: 6500, consumptionPower: 500 }, charging1p, client, t0);
+      // The EV pauses charging on its own (status leaves 'charging'), surplus unchanged.
+      const paused = makeState({ status: 'connected', phases: 1 });
+      await ctrl.tick({ pvPower: 6500, consumptionPower: 500 }, paused, client, t0 + 60_000);
+      // Charging has resumed; surplus is in the band again much later. Without the
+      // pause-reset, the stale timer from t0 would fire the 1→3 switch immediately.
+      await ctrl.tick({ pvPower: 6500, consumptionPower: 500 }, charging1p, client, t0 + TOLERANCE_MS + 60_000);
+      expect(client.setPhases).not.toHaveBeenCalled();
+    });
   });
 
   describe('updateDetails', () => {

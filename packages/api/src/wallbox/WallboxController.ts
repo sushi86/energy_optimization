@@ -134,6 +134,8 @@ export class WallboxController {
 
     // mode === 'pv'
     if (!wallboxState) {
+      this.switchUpSince = null;
+      this.switchDownSince = null;
       const surplusW = systemState.pvPower - systemState.consumptionPower;
       this.lastDetails = { surplusW: Math.round(surplusW), targetCurrentA: null, reason: 'Warte auf Wallbox-Daten' };
       return;
@@ -210,6 +212,8 @@ export class WallboxController {
       }
     } else {
       this.insufficientSince = null;
+      this.switchUpSince = null;
+      this.switchDownSince = null;
       if (!wallboxState.vehicleConnected) {
         this.sufficientSince = null;
         this.lastDetails = { surplusW: Math.round(surplusW), targetCurrentA: null, reason: 'Kein Fahrzeug verbunden' };
