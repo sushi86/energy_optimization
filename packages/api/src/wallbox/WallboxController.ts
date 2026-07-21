@@ -32,6 +32,7 @@ const MIN_POWER_3P_W = 3 * MIN_CHARGING_CURRENT_A * VOLTAGE_V; // 4140 W
 // 3P-Minimum, damit ein um die Schwelle pendelnder Überschuss nicht ständig umschaltet.
 const PHASE_SWITCH_MARGIN_W = 300;
 const SWITCH_UP_W = MIN_POWER_3P_W + PHASE_SWITCH_MARGIN_W; // 4440 W
+const START_ATTEMPT_LIMIT = 3;
 
 function targetCurrent(surplusW: number, phases: 1 | 3): number {
   const ampere = Math.floor(surplusW / (phases * VOLTAGE_V));
@@ -61,6 +62,11 @@ export class WallboxController {
 
   getLastDetails(): WallboxControllerDetails | null {
     return this.lastDetails;
+  }
+
+  resetRejected(): void {
+    this.rejected = false;
+    this.startAttempts = 0;
   }
 
   setMode(mode: WallboxControllerMode): void {
@@ -155,6 +161,23 @@ export class WallboxController {
       return;
     }
 
+    const isCharging = wallboxState.status === 'charging';
+
+    // Resolve the outcome of a start attempt issued on a previous tick before
+    // doing anything else. Only tick() (client present) drives this so that
+    // updateDetails() stays side-effect-free, matching the rest of this class.
+    if (client && this.pendingStart) {
+      this.pendingStart = false;
+      if (isCharging) {
+        this.startAttempts = 0;
+      } else {
+        this.startAttempts += 1;
+        if (this.startAttempts >= START_ATTEMPT_LIMIT) {
+          this.rejected = true;
+        }
+      }
+    }
+
     // consumptionPower already includes the wallbox's own draw (same AC circuit), so add
     // it back — otherwise charging collapses its own computed surplus (self-defeating loop).
     const surplusW = systemState.pvPower - systemState.consumptionPower + wallboxState.powerW;
@@ -165,8 +188,6 @@ export class WallboxController {
     const otherConsumptionW = systemState.consumptionPower - wallboxState.powerW;
     const availableW = Math.min(surplusW, this.config.acLoadCapW - otherConsumptionW);
     const capSuffix = availableW < surplusW ? ' — AC-Limit aktiv' : '';
-
-    const isCharging = wallboxState.status === 'charging';
 
     if (isCharging) {
       this.sufficientSince = null;
@@ -256,10 +277,25 @@ export class WallboxController {
       if (!wallboxState.vehicleConnected) {
         this.sufficientSince = null;
         this.startNotifiedPending = false;
+        this.startAttempts = 0;
+        this.pendingStart = false;
+        this.rejected = false;
         this.lastDetails = { surplusW: Math.round(surplusW), targetCurrentA: null, reason: 'Kein Fahrzeug verbunden', startAttempts: this.startAttempts, pendingStart: this.pendingStart, rejected: this.rejected };
         return;
       }
       if (availableW >= MIN_POWER_1P_W) {
+        if (this.rejected) {
+          this.sufficientSince = null;
+          this.lastDetails = {
+            surplusW: Math.round(availableW),
+            targetCurrentA: null,
+            reason: 'Ladung abgelehnt, Auto voll?',
+            startAttempts: this.startAttempts,
+            pendingStart: this.pendingStart,
+            rejected: this.rejected,
+          };
+          return;
+        }
         if (this.sufficientSince === null) this.sufficientSince = now;
         const startPhases: 1 | 3 = availableW >= SWITCH_UP_W ? 3 : 1;
         const elapsedS = Math.round((now - this.sufficientSince) / 1000);
@@ -270,6 +306,7 @@ export class WallboxController {
           await client.setChargingCurrent(startCurrentA);
           await client.startCharging();
           this.sufficientSince = null;
+          this.pendingStart = true;
           if (!this.startNotifiedPending) {
             this.startNotifiedPending = true;
             energyEvents.emit('wallbox:charging-started', {

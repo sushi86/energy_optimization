@@ -689,6 +689,122 @@ describe('WallboxController', () => {
     });
   });
 
+  describe('pv mode — start-retry limit', () => {
+    it('does not gate the first two failed start attempts', async () => {
+      const ctrl = makeController();
+      ctrl.setMode('pv');
+      const client = makeClient();
+      const state = makeState({ status: 'available' }); // never transitions to 'charging'
+      const t0 = 1_000_000;
+      await ctrl.tick({ pvPower: 5500, consumptionPower: 500 }, state, client, t0);
+      await ctrl.tick({ pvPower: 5500, consumptionPower: 500 }, state, client, t0 + TOLERANCE_MS); // attempt 1
+      await ctrl.tick({ pvPower: 5500, consumptionPower: 500 }, state, client, t0 + 2 * TOLERANCE_MS); // resolves attempt 1, starts attempt 2's timer
+      await ctrl.tick({ pvPower: 5500, consumptionPower: 500 }, state, client, t0 + 3 * TOLERANCE_MS); // attempt 2 fires
+      expect(client.startCharging).toHaveBeenCalledTimes(2);
+      expect(ctrl.getLastDetails()?.rejected).toBe(false);
+      expect(ctrl.getLastDetails()?.startAttempts).toBe(1); // attempt 2's outcome not yet resolved
+    });
+
+    it('sets rejected after the 3rd consecutive failed attempt and stops auto-starting', async () => {
+      const ctrl = makeController();
+      ctrl.setMode('pv');
+      const client = makeClient();
+      const state = makeState({ status: 'available' }); // never transitions to 'charging'
+      const t0 = 1_000_000;
+      // Each attempt cycle costs 2 ticks: one that fires startCharging() once the
+      // (re-)armed timer's tolerance has elapsed, and the next tick that resolves
+      // the outcome AND re-arms the timer for the following cycle. With ticks on
+      // exact TOLERANCE_MS boundaries, calls land at t0+TOL, t0+3*TOL, t0+5*TOL,
+      // and the 3rd call's outcome resolves at t0+6*TOL.
+      await ctrl.tick({ pvPower: 5500, consumptionPower: 500 }, state, client, t0); // arms timer
+      await ctrl.tick({ pvPower: 5500, consumptionPower: 500 }, state, client, t0 + TOLERANCE_MS); // attempt 1 fires
+      await ctrl.tick({ pvPower: 5500, consumptionPower: 500 }, state, client, t0 + 2 * TOLERANCE_MS); // resolves 1 (fail), re-arms
+      await ctrl.tick({ pvPower: 5500, consumptionPower: 500 }, state, client, t0 + 3 * TOLERANCE_MS); // attempt 2 fires
+      await ctrl.tick({ pvPower: 5500, consumptionPower: 500 }, state, client, t0 + 4 * TOLERANCE_MS); // resolves 2 (fail), re-arms
+      await ctrl.tick({ pvPower: 5500, consumptionPower: 500 }, state, client, t0 + 5 * TOLERANCE_MS); // attempt 3 fires
+      await ctrl.tick({ pvPower: 5500, consumptionPower: 500 }, state, client, t0 + 6 * TOLERANCE_MS); // resolves 3 (fail) → rejected
+      expect(client.startCharging).toHaveBeenCalledTimes(3);
+      expect(ctrl.getLastDetails()).toEqual({
+        surplusW: 5000,
+        targetCurrentA: null,
+        reason: 'Ladung abgelehnt, Auto voll?',
+        startAttempts: 3,
+        pendingStart: false,
+        rejected: true,
+      });
+
+      // A further tick, even with plenty of surplus and elapsed time, must not retry.
+      await ctrl.tick({ pvPower: 5500, consumptionPower: 500 }, state, client, t0 + 20 * TOLERANCE_MS);
+      expect(client.startCharging).toHaveBeenCalledTimes(3);
+    });
+
+    it('resets the attempt counter on a successful start', async () => {
+      const ctrl = makeController();
+      ctrl.setMode('pv');
+      const client = makeClient();
+      const idle = makeState({ status: 'available' });
+      const t0 = 1_000_000;
+      await ctrl.tick({ pvPower: 5500, consumptionPower: 500 }, idle, client, t0);
+      await ctrl.tick({ pvPower: 5500, consumptionPower: 500 }, idle, client, t0 + TOLERANCE_MS); // attempt 1 fires
+      // Vehicle actually starts charging before the next tick resolves the attempt.
+      const charging = makeState({ status: 'charging', chargingCurrentA: 7 });
+      await ctrl.tick({ pvPower: 5500, consumptionPower: 500 }, charging, client, t0 + TOLERANCE_MS + 20_000);
+      expect(ctrl.getLastDetails()?.startAttempts).toBe(0);
+      expect(ctrl.getLastDetails()?.rejected).toBe(false);
+    });
+
+    it('resets rejected and the counter when the vehicle is unplugged', async () => {
+      const ctrl = makeController();
+      ctrl.setMode('pv');
+      const client = makeClient();
+      const state = makeState({ status: 'available' });
+      const t0 = 1_000_000;
+      // Same 7-tick cadence as the previous test to reach rejected === true
+      // (see that test's comment for why calls land 2 ticks apart).
+      await ctrl.tick({ pvPower: 5500, consumptionPower: 500 }, state, client, t0);
+      await ctrl.tick({ pvPower: 5500, consumptionPower: 500 }, state, client, t0 + TOLERANCE_MS);
+      await ctrl.tick({ pvPower: 5500, consumptionPower: 500 }, state, client, t0 + 2 * TOLERANCE_MS);
+      await ctrl.tick({ pvPower: 5500, consumptionPower: 500 }, state, client, t0 + 3 * TOLERANCE_MS);
+      await ctrl.tick({ pvPower: 5500, consumptionPower: 500 }, state, client, t0 + 4 * TOLERANCE_MS);
+      await ctrl.tick({ pvPower: 5500, consumptionPower: 500 }, state, client, t0 + 5 * TOLERANCE_MS);
+      await ctrl.tick({ pvPower: 5500, consumptionPower: 500 }, state, client, t0 + 6 * TOLERANCE_MS);
+      expect(ctrl.getLastDetails()?.rejected).toBe(true);
+
+      const unplugged = makeState({ status: 'available', vehicleConnected: false });
+      await ctrl.tick({ pvPower: 5500, consumptionPower: 500 }, unplugged, client, t0 + 7 * TOLERANCE_MS);
+      expect(ctrl.getLastDetails()?.rejected).toBe(false);
+      expect(ctrl.getLastDetails()?.startAttempts).toBe(0);
+    });
+
+    it('resetRejected() clears the flags without calling startCharging directly', async () => {
+      const ctrl = makeController();
+      ctrl.setMode('pv');
+      const client = makeClient();
+      const state = makeState({ status: 'available' });
+      const t0 = 1_000_000;
+      // Same 7-tick cadence as the earlier test to reach rejected === true.
+      await ctrl.tick({ pvPower: 5500, consumptionPower: 500 }, state, client, t0);
+      await ctrl.tick({ pvPower: 5500, consumptionPower: 500 }, state, client, t0 + TOLERANCE_MS);
+      await ctrl.tick({ pvPower: 5500, consumptionPower: 500 }, state, client, t0 + 2 * TOLERANCE_MS);
+      await ctrl.tick({ pvPower: 5500, consumptionPower: 500 }, state, client, t0 + 3 * TOLERANCE_MS);
+      await ctrl.tick({ pvPower: 5500, consumptionPower: 500 }, state, client, t0 + 4 * TOLERANCE_MS);
+      await ctrl.tick({ pvPower: 5500, consumptionPower: 500 }, state, client, t0 + 5 * TOLERANCE_MS);
+      await ctrl.tick({ pvPower: 5500, consumptionPower: 500 }, state, client, t0 + 6 * TOLERANCE_MS);
+      expect(ctrl.getLastDetails()?.rejected).toBe(true);
+      const callsBeforeReset = client.startCharging.mock.calls.length; // 3
+
+      ctrl.resetRejected();
+      expect(client.startCharging.mock.calls.length).toBe(callsBeforeReset); // no direct call
+
+      // Next tick re-arms the timer (sufficientSince was null); the one after that,
+      // a full tolerance window later, fires the next attempt.
+      await ctrl.tick({ pvPower: 5500, consumptionPower: 500 }, state, client, t0 + 7 * TOLERANCE_MS);
+      expect(client.startCharging.mock.calls.length).toBe(callsBeforeReset); // still waiting out the tolerance window
+      await ctrl.tick({ pvPower: 5500, consumptionPower: 500 }, state, client, t0 + 8 * TOLERANCE_MS);
+      expect(client.startCharging.mock.calls.length).toBe(callsBeforeReset + 1);
+    });
+  });
+
   describe('pv mode — event emissions', () => {
     afterEach(() => {
       energyEvents.removeAllListeners('wallbox:charging-started');
