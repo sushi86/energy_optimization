@@ -295,6 +295,10 @@ export class AppState {
     this.wallboxClient = client;
   }
 
+  getWallboxClient(): WallboxClient | null {
+    return this.wallboxClient;
+  }
+
   getConfig(): AppStateOptions {
     return { ...this.config };
   }

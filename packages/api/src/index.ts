@@ -11,6 +11,7 @@ import { InexogyService } from './inexogy-service.js';
 import { GridHistoryService } from './grid-history-service.js';
 import { NibePoller } from './nibe-poller.js';
 import { createWallboxClient, type WallboxClient } from './wallbox/WallboxClient.js';
+import { connectWallboxWithRetry } from './wallbox/connectWithRetry.js';
 import { initVapid } from './vapid.js';
 import { PushService } from './push-service.js';
 import { PvTracker } from './pv-tracker.js';
@@ -92,6 +93,7 @@ async function main() {
     console.log('[energy-control] nibe heat pump poller enabled');
   }
 
+  const WALLBOX_RECONNECT_INTERVAL_MS = 30_000;
   let wallboxClient: WallboxClient | undefined;
   if (config.WALLBOX_HOST) {
     const client = createWallboxClient({
@@ -99,15 +101,22 @@ async function main() {
       port: config.WALLBOX_PORT,
       unitId: config.WALLBOX_UNIT_ID,
     });
-    try {
-      await client.connect();
+    // Connects in the background with retries so a wallbox that's unreachable at
+    // startup (e.g. still booting, a transient network hiccup) doesn't disable the
+    // integration for the rest of the process lifetime — it just keeps retrying.
+    void connectWallboxWithRetry(client, {
+      intervalMs: WALLBOX_RECONNECT_INTERVAL_MS,
+      onError: (err) =>
+        console.error(
+          `[energy-control] EM2GO wallbox connection failed, retrying in ${WALLBOX_RECONNECT_INTERVAL_MS / 1000}s:`,
+          err.message,
+        ),
+    }).then(() => {
       client.startPolling(config.WALLBOX_POLL_INTERVAL_MS, () => {});
       wallboxClient = client;
       appState.setWallboxClient(client);
       console.log('[energy-control] EM2GO wallbox (Modbus) enabled');
-    } catch (err) {
-      console.error('[energy-control] EM2GO wallbox connection failed, continuing without it:', (err as Error).message);
-    }
+    });
   }
 
   // --- Push notifications ---

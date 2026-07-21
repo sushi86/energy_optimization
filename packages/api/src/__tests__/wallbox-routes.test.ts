@@ -193,4 +193,21 @@ describe('wallbox routes — with AppState', () => {
     const res = await app.inject({ method: 'POST', url: '/api/wallbox/mode', payload: { mode: 'bogus' } });
     expect(res.statusCode).toBe(400);
   });
+
+  it('picks up a wallbox client set on AppState after the server was already built', async () => {
+    const lateApp = buildServer({ testing: true, appState });
+    await lateApp.ready();
+
+    const before = await lateApp.inject({ method: 'GET', url: '/api/wallbox/status' });
+    expect(before.statusCode).toBe(503);
+
+    const wallboxClient = createWallboxClient({ host: '192.168.1.254', port: 502, unitId: 255 });
+    await wallboxClient.connect();
+    appState.setWallboxClient(wallboxClient);
+
+    const after = await lateApp.inject({ method: 'GET', url: '/api/wallbox/status' });
+    expect(after.statusCode).toBe(200);
+
+    await lateApp.close();
+  });
 });

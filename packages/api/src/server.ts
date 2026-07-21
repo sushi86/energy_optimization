@@ -118,7 +118,11 @@ export function buildServer(options: ServerOptions = {}): FastifyInstance {
   const socHistoryService = options.socHistoryService;
   const pvHistoryService = options.pvHistoryService;
   const nibePoller = options.nibePoller;
-  const wallboxClient = options.wallboxClient;
+  // Read from AppState on every call rather than capturing a single reference here —
+  // the wallbox connects asynchronously with retries after the server starts (see
+  // connectWallboxWithRetry in index.ts), so options.wallboxClient may still be
+  // undefined at buildServer() time and get set on AppState later.
+  const getWallboxClient = (): WallboxClient | null => state?.getWallboxClient() ?? options.wallboxClient ?? null;
   const pushService = options.pushService;
   const dailySummaryService = options.dailySummaryService;
   const pvSettingsPath = options.pvSettingsPath ?? resolve(dirname(fileURLToPath(import.meta.url)), '../../../data/pv-settings.json');
@@ -209,7 +213,7 @@ export function buildServer(options: ServerOptions = {}): FastifyInstance {
         pvPeakKwp: loadPvSettings(pvSettingsPath).kwp,
         mpptTemperatureC,
         heatPumpPowerW: nibePoller?.getPowerW() ?? null,
-        wallboxPowerW: wallboxClient?.getLastState()?.powerW ?? null,
+        wallboxPowerW: getWallboxClient()?.getLastState()?.powerW ?? null,
         timestamp: s.timestamp.toISOString(),
       });
 
@@ -732,6 +736,7 @@ export function buildServer(options: ServerOptions = {}): FastifyInstance {
   // --- Wallbox endpoints ---
 
   app.get('/api/wallbox/status', async (_request, reply) => {
+    const wallboxClient = getWallboxClient();
     if (!wallboxClient) return reply.code(503).send({ error: 'Wallbox not configured' });
     const mode = state?.wallboxController.getMode() ?? 'off';
     const controllerDetails = state?.wallboxController.getLastDetails() ?? null;
@@ -758,6 +763,7 @@ export function buildServer(options: ServerOptions = {}): FastifyInstance {
   });
 
   app.post('/api/wallbox/start', async (_request, reply) => {
+    const wallboxClient = getWallboxClient();
     if (!wallboxClient) return reply.code(503).send({ error: 'Wallbox not configured' });
     try {
       await wallboxClient.startCharging();
@@ -768,6 +774,7 @@ export function buildServer(options: ServerOptions = {}): FastifyInstance {
   });
 
   app.post('/api/wallbox/stop', async (_request, reply) => {
+    const wallboxClient = getWallboxClient();
     if (!wallboxClient) return reply.code(503).send({ error: 'Wallbox not configured' });
     try {
       await wallboxClient.stopCharging();
@@ -778,6 +785,7 @@ export function buildServer(options: ServerOptions = {}): FastifyInstance {
   });
 
   app.post('/api/wallbox/current', async (request, reply) => {
+    const wallboxClient = getWallboxClient();
     if (!wallboxClient) return reply.code(503).send({ error: 'Wallbox not configured' });
     const { ampere } = request.body as { ampere: number };
     if (ampere < MIN_CHARGING_CURRENT_A || ampere > MAX_CHARGING_CURRENT_A) {
@@ -792,6 +800,7 @@ export function buildServer(options: ServerOptions = {}): FastifyInstance {
   });
 
   app.post('/api/wallbox/phases', async (request, reply) => {
+    const wallboxClient = getWallboxClient();
     if (!wallboxClient) return reply.code(503).send({ error: 'Wallbox not configured' });
     const { phases } = request.body as { phases: 1 | 3 };
     if (phases !== 1 && phases !== 3) {
