@@ -38,7 +38,8 @@ Energy Control connects to a Victron system via MQTT and VRM, monitors solar pro
 - **PV forecast ensemble** — combines VRM forecast and [forecast.solar](https://forecast.solar) with automatic correction factors for more accurate predictions
 - **Smart meter integration** — optional Inexogy smart meter support for precise grid measurements
 - **Device monitoring** — live power consumption from Nibe heat pump, displayed in the dashboard
-- **Wallbox control** — Modbus TCP control of an EM2GO Home 11kW wallbox (start/stop, current, phase switching)
+- **Wallbox control** — Modbus TCP control of an EM2GO Home 11kW wallbox: manual start/stop/current/phases, plus a PV-surplus mode that auto-starts/stops charging, switches 1↔3 phases, and caps combined house+wallbox load under the inverter's AC limit
+- **Push notifications** — Web Push alerts for morning briefings, daily summaries, mode changes, and wallbox events (charging started/stopped, phase switches, plug/unplug)
 - **Live dashboard** — real-time web UI with power flows, charge plan visualization, price charts, and grid history
 
 ## Architecture
@@ -121,6 +122,8 @@ All configuration lives in `.env`. See [`.env.example`](.env.example) for the fu
 | `NIBE_PASSWORD` | no | Nibe heat pump API password |
 | `MPPT_TEMPERATURE_URL` | no | Shelly temperature sensor endpoint |
 | `DEPLOY_SERVER` | no | SSH target for `deploy.sh` |
+| `WALLBOX_HOST` | no | IP address of the EM2GO wallbox (see [Optional Integrations](#optional-integrations)) |
+| `VAPID_SUBJECT` | no | Contact URI for Web Push (see [Optional Integrations](#optional-integrations)) |
 
 Runtime parameters (battery capacity, SoC limits, deadband, charge power, etc.) can be adjusted live through the settings UI or the REST API.
 
@@ -128,7 +131,9 @@ Runtime parameters (battery capacity, SoC limits, deadband, charge power, etc.) 
 
 ### EM2GO Wallbox (Modbus TCP)
 
-Manual control of an EM2GO Home 11kW wallbox via Modbus TCP.
+Control of an EM2GO Home 11kW wallbox via Modbus TCP, in three modes (switchable from the
+dashboard): **Off**, **Manual** (direct start/stop/current/phase control), and **PV**
+(automatic surplus-based charging).
 
 Environment variables (all optional — omitting `WALLBOX_HOST` disables the integration):
 
@@ -138,6 +143,17 @@ Environment variables (all optional — omitting `WALLBOX_HOST` disables the int
 | `WALLBOX_PORT` | `502` | Modbus TCP port |
 | `WALLBOX_UNIT_ID` | `255` | Modbus unit/slave ID |
 | `WALLBOX_POLL_INTERVAL_MS` | `5000` | Status polling interval |
+| `WALLBOX_PV_TOLERANCE_MINUTES` | `2` | How long surplus/deficit must persist before PV mode starts, stops, or switches phases |
+
+**PV mode:** starts charging (1 or 3 phases, whichever the surplus supports) once PV
+surplus stays above the minimum for `WALLBOX_PV_TOLERANCE_MINUTES`, adjusts the charging
+current live to track surplus, and stops after the same tolerance once surplus drops too
+low. Combined house + wallbox load is capped below `MAX_AC_POWER_W` minus a configurable
+reserve (`wallboxAcReserveW`, settings UI) so PV charging never overloads the inverter's AC
+output. If the vehicle refuses to actually start charging (e.g. already full) for 3
+consecutive attempts, PV mode stops auto-retrying and shows "Ladung abgelehnt, Auto voll?"
+with a manual retry button, rather than repeatedly re-triggering the vehicle's charge
+controller.
 
 **⚠️ Only one Modbus TCP connection is supported by the wallbox at a time.** If you use
 [evcc](https://evcc.io) to control the same wallbox, you must stop evcc (or remove the
@@ -148,6 +164,17 @@ The register map (`packages/api/src/wallbox/types.ts`) was derived from evcc's o
 `charger/em2go.go` driver and verified against a live EM2GO Home 11kW unit. Older Home
 firmware (< 1.3) needs an additional current-rounding workaround on enable/phase-switch
 that is not implemented here (see the `TODO` in `types.ts`).
+
+### Push Notifications (Web Push)
+
+Browser push notifications for key events (morning PV briefing, daily production summary,
+mode switches, wallbox charging/plug events). VAPID keys are generated automatically on
+first start and persisted in the data directory — no setup required beyond subscribing from
+the dashboard.
+
+| Variable | Default | Description |
+|---|---|---|
+| `VAPID_SUBJECT` | `mailto:energy@example.com` | Contact URI sent with push requests (set to a real `mailto:` address per the Web Push spec) |
 
 ## Controller modes
 
@@ -175,16 +202,13 @@ pnpm test
 
 ## Roadmap
 
-Currently, Energy Control is built exclusively for **Victron Energy** systems. Future integrations are planned:
+Currently, Energy Control is built exclusively for **Victron Energy** systems. PV-surplus EV
+charging is now built in natively (see [Wallbox](#em2go-wallbox-modbus-tcp) above) rather than
+via evcc. Future integrations are planned:
 
 <table>
   <tr>
-    <td align="center" width="50%">
-      <img src="docs/images/evcc-logo.png" height="36" alt="EVCC"><br>
-      <strong>EVCC</strong><br>
-      <sub>EV charging integration — coordinate battery and wallbox to charge your car from excess solar at the best price.</sub>
-    </td>
-    <td align="center" width="50%">
+    <td align="center" width="100%">
       <img src="docs/images/hass-logo.png" height="36" alt="Home Assistant"><br>
       <strong>Home Assistant</strong><br>
       <sub>Expose sensors, controls, and charge plans as HA entities for automation and multi-system dashboards.</sub>
