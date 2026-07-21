@@ -11,7 +11,14 @@ interface WallboxStatusResponse {
   initializing?: boolean;
   vehicleConnected: boolean;
   mode: WallboxMode;
-  controllerDetails: { surplusW: number; targetCurrentA: number | null; reason: string } | null;
+  controllerDetails: {
+    surplusW: number;
+    targetCurrentA: number | null;
+    reason: string;
+    startAttempts: number;
+    pendingStart: boolean;
+    rejected: boolean;
+  } | null;
 }
 
 const modeLabels: Record<WallboxMode, string> = {
@@ -69,6 +76,11 @@ export default function WallboxControlCard({ onModeChange }: { onModeChange?: (m
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ mode }),
     });
+    void refresh();
+  };
+
+  const retryStart = async () => {
+    await fetch('/api/wallbox/retry-start', { method: 'POST' });
     void refresh();
   };
 
@@ -135,7 +147,23 @@ export default function WallboxControlCard({ onModeChange }: { onModeChange?: (m
             <span className="text-[var(--text-secondary)]">Ziel-Ladestrom</span>
             <span>{status.controllerDetails.targetCurrentA != null ? `${status.controllerDetails.targetCurrentA} A` : '—'}</span>
           </div>
+          <div className="flex justify-between gap-4">
+            <span className="text-[var(--text-secondary)]">Start-Versuche</span>
+            <span>{status.controllerDetails.startAttempts} / 3</span>
+          </div>
+          <div className="flex justify-between gap-4">
+            <span className="text-[var(--text-secondary)]">Versuch läuft</span>
+            <span>{status.controllerDetails.pendingStart ? 'ja' : 'nein'}</span>
+          </div>
           <p className="text-[var(--text-secondary)] pt-1">{status.controllerDetails.reason}</p>
+          {status.controllerDetails.rejected && (
+            <button
+              onClick={() => void retryStart()}
+              className="mt-1 px-3 py-1 rounded-full text-xs font-medium border bg-yellow-500/20 text-yellow-400 border-yellow-500/30 hover:bg-yellow-500/30 transition-colors cursor-pointer"
+            >
+              Erneut versuchen
+            </button>
+          )}
         </div>
       )}
     </div>
