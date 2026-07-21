@@ -273,6 +273,77 @@ describe('WallboxClient.getState', () => {
     expect(client.isConnected()).toBe(true);
   });
 
+  it('clears the cached state immediately on a failed getState() (no stale data)', async () => {
+    await client.getState();
+    expect(client.getLastState()).not.toBeNull();
+
+    mockReadHoldingRegisters.mockRejectedValueOnce(new Error('ECONNRESET'));
+    await expect(client.getState()).rejects.toThrow('ECONNRESET');
+    expect(client.getLastState()).toBeNull();
+  });
+
+  it('tracks consecutiveFailures, resetting to 0 on the next success', async () => {
+    await client.getState();
+    expect(client.getConnectionInfo().consecutiveFailures).toBe(0);
+
+    mockReadHoldingRegisters.mockRejectedValueOnce(new Error('ECONNRESET'));
+    await expect(client.getState()).rejects.toThrow('ECONNRESET');
+    expect(client.getConnectionInfo().consecutiveFailures).toBe(1);
+
+    mockReadHoldingRegisters.mockRejectedValueOnce(new Error('ECONNRESET'));
+    await expect(client.getState()).rejects.toThrow('ECONNRESET');
+    expect(client.getConnectionInfo().consecutiveFailures).toBe(2);
+
+    mockRegisters();
+    await client.getState();
+    expect(client.getConnectionInfo().consecutiveFailures).toBe(0);
+  });
+
+  it('sets disconnectedSinceMs on the first failure after a success, keeps it stable across further failures', async () => {
+    await client.getState();
+    expect(client.getConnectionInfo().disconnectedSinceMs).toBeNull();
+
+    mockReadHoldingRegisters.mockRejectedValueOnce(new Error('ECONNRESET'));
+    await expect(client.getState()).rejects.toThrow('ECONNRESET');
+    const firstFailureAt = client.getConnectionInfo().disconnectedSinceMs;
+    expect(firstFailureAt).not.toBeNull();
+
+    await new Promise((r) => setTimeout(r, 5));
+    mockReadHoldingRegisters.mockRejectedValueOnce(new Error('ECONNRESET'));
+    await expect(client.getState()).rejects.toThrow('ECONNRESET');
+    expect(client.getConnectionInfo().disconnectedSinceMs).toBe(firstFailureAt);
+
+    mockRegisters();
+    await client.getState();
+    expect(client.getConnectionInfo().disconnectedSinceMs).toBeNull();
+  });
+
+  it('exposes the last error message via getConnectionInfo()', async () => {
+    mockReadHoldingRegisters.mockRejectedValueOnce(new Error('ECONNRESET'));
+    await expect(client.getState()).rejects.toThrow('ECONNRESET');
+    expect(client.getConnectionInfo().error).toBe('ECONNRESET');
+
+    mockRegisters();
+    await client.getState();
+    expect(client.getConnectionInfo().error).toBeNull();
+  });
+
+  it('initializing is true only before the first ever successful connect, not after a later disconnect', async () => {
+    const freshClient = createWallboxClient({ host: '192.168.1.254', port: 502, unitId: 255 });
+    expect(freshClient.getConnectionInfo().initializing).toBe(true);
+
+    await freshClient.connect();
+    await freshClient.getState();
+    expect(freshClient.getConnectionInfo().initializing).toBe(false);
+
+    mockReadHoldingRegisters.mockRejectedValueOnce(new Error('ECONNRESET'));
+    await expect(freshClient.getState()).rejects.toThrow('ECONNRESET');
+    expect(freshClient.getConnectionInfo().initializing).toBe(false);
+    expect(freshClient.getConnectionInfo().connected).toBe(false);
+
+    await freshClient.disconnect();
+  });
+
   it('closes the connection on a read error and reconnects on the next request', async () => {
     const connectsBefore = mockConnectTCP.mock.calls.length;
     mockReadHoldingRegisters.mockRejectedValueOnce(new Error('Timed out'));

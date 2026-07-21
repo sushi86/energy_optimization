@@ -55,6 +55,9 @@ export class WallboxClient {
   private heartbeatTimer: ReturnType<typeof setInterval> | null = null;
   private lastState: WallboxState | null = null;
   private lastError: string | null = null;
+  private hasConnectedOnce = false;
+  private consecutiveFailures = 0;
+  private disconnectedSinceMs: number | null = null;
   private queue: Promise<unknown> = Promise.resolve();
   private statics: WallboxStatics | null = null;
   private lastCommandedCurrentA = MIN_CHARGING_CURRENT_A;
@@ -156,9 +159,15 @@ export class WallboxClient {
     try {
       const statics = (this.statics ??= await this.readStatics());
       const state = await this.readDynamicState(statics);
+      this.hasConnectedOnce = true;
+      this.consecutiveFailures = 0;
+      this.disconnectedSinceMs = null;
       this.lastError = null;
       return state;
     } catch (err) {
+      this.lastState = null;
+      this.consecutiveFailures += 1;
+      this.disconnectedSinceMs ??= Date.now();
       this.lastError = (err as Error).message;
       throw err;
     }
@@ -201,7 +210,23 @@ export class WallboxClient {
   }
 
   isConnected(): boolean {
-    return this.lastState !== null && this.lastError === null;
+    return this.lastState !== null;
+  }
+
+  getConnectionInfo(): {
+    connected: boolean;
+    initializing: boolean;
+    error: string | null;
+    disconnectedSinceMs: number | null;
+    consecutiveFailures: number;
+  } {
+    return {
+      connected: this.lastState !== null,
+      initializing: !this.hasConnectedOnce && this.lastState === null,
+      error: this.lastError,
+      disconnectedSinceMs: this.disconnectedSinceMs,
+      consecutiveFailures: this.consecutiveFailures,
+    };
   }
 
   async startCharging(): Promise<void> {
