@@ -86,27 +86,30 @@ export class NotificationService {
   }
 
   private handleWallboxChargingStarted(event: WallboxChargingStartedEvent): void {
+    const suffix = event.capped ? ' — AC-Limit aktiv' : '';
     void this.pushService.sendNotification({
       title: 'Wallbox',
-      body: `🔌 Ladung gestartet — ${event.phases}-phasig mit ${event.currentA} A (Überschuss ${event.surplusW} W)`,
+      body: `🔌 Ladung gestartet — ${event.phases}-phasig mit ${event.currentA} A (Überschuss ${event.surplusW} W)${suffix}`,
       url: '/',
       tag: 'wallbox-charging',
     });
   }
 
   private handleWallboxChargingStopped(event: WallboxChargingStoppedEvent): void {
+    const suffix = event.capped ? ' — AC-Limit aktiv' : '';
     void this.pushService.sendNotification({
       title: 'Wallbox',
-      body: `⏹️ Ladung gestoppt — Überschuss zu gering (${event.surplusW} W)`,
+      body: `⏹️ Ladung gestoppt — Überschuss zu gering (${event.surplusW} W)${suffix}`,
       url: '/',
       tag: 'wallbox-charging',
     });
   }
 
   private handleWallboxPhasesSwitched(event: WallboxPhasesSwitchedEvent): void {
+    const suffix = event.capped ? ' — AC-Limit aktiv' : '';
     void this.pushService.sendNotification({
       title: 'Wallbox',
-      body: `⚡ Von ${event.from}- auf ${event.to}-phasig umgeschaltet (Überschuss ${event.surplusW} W)`,
+      body: `⚡ Von ${event.from}- auf ${event.to}-phasig umgeschaltet (Überschuss ${event.surplusW} W)${suffix}`,
       url: '/',
       tag: 'wallbox-phases',
     });

@@ -660,7 +660,7 @@ describe('WallboxController', () => {
         // surplus = 15000, Hauslast 500 → available = 10500 → 3-phasig floor(10500/690) = 15 A
         await ctrl.tick({ pvPower: 15_500, consumptionPower: 500 }, state, client, t0);
         await ctrl.tick({ pvPower: 15_500, consumptionPower: 500 }, state, client, t0 + TOLERANCE_MS);
-        expect(started).toEqual([{ phases: 3, currentA: 15, surplusW: 10500 }]);
+        expect(started).toEqual([{ phases: 3, currentA: 15, surplusW: 10500, capped: true }]);
       } finally {
         energyEvents.off('wallbox:charging-started', onStarted as never);
       }
@@ -700,7 +700,7 @@ describe('WallboxController', () => {
       await ctrl.tick({ pvPower: 5500, consumptionPower: 500 }, state, client, t0);
       expect(started).toHaveLength(0); // countdown läuft noch
       await ctrl.tick({ pvPower: 5500, consumptionPower: 500 }, state, client, t0 + TOLERANCE_MS);
-      expect(started).toEqual([{ phases: 3, currentA: 7, surplusW: 5000 }]);
+      expect(started).toEqual([{ phases: 3, currentA: 7, surplusW: 5000, capped: false }]);
     });
 
     it('emits wallbox:charging-started with payload on a 1-phase start', async () => {
@@ -712,7 +712,7 @@ describe('WallboxController', () => {
       const t0 = 1_000_000;
       await ctrl.tick({ pvPower: 3000, consumptionPower: 500 }, state, client, t0);
       await ctrl.tick({ pvPower: 3000, consumptionPower: 500 }, state, client, t0 + TOLERANCE_MS);
-      expect(started).toEqual([{ phases: 1, currentA: 10, surplusW: 2500 }]);
+      expect(started).toEqual([{ phases: 1, currentA: 10, surplusW: 2500, capped: false }]);
     });
 
     it('emits wallbox:charging-stopped when stopping due to insufficient surplus', async () => {
@@ -725,7 +725,7 @@ describe('WallboxController', () => {
       await ctrl.tick({ pvPower: 1000, consumptionPower: 500 }, state, client, t0);
       expect(stopped).toHaveLength(0);
       await ctrl.tick({ pvPower: 1000, consumptionPower: 500 }, state, client, t0 + TOLERANCE_MS);
-      expect(stopped).toEqual([{ surplusW: 500 }]);
+      expect(stopped).toEqual([{ surplusW: 500, capped: false }]);
     });
 
     it('emits wallbox:phases-switched on switch-up 1→3', async () => {
@@ -737,7 +737,7 @@ describe('WallboxController', () => {
       const t0 = 1_000_000;
       await ctrl.tick({ pvPower: 6500, consumptionPower: 500 }, state, client, t0);
       await ctrl.tick({ pvPower: 6500, consumptionPower: 500 }, state, client, t0 + TOLERANCE_MS);
-      expect(switched).toEqual([{ from: 1, to: 3, currentA: 8, surplusW: 6000 }]);
+      expect(switched).toEqual([{ from: 1, to: 3, currentA: 8, surplusW: 6000, capped: false }]);
     });
 
     it('emits wallbox:phases-switched on switch-down 3→1', async () => {
@@ -749,7 +749,7 @@ describe('WallboxController', () => {
       const t0 = 1_000_000;
       await ctrl.tick({ pvPower: 3500, consumptionPower: 500 }, state, client, t0);
       await ctrl.tick({ pvPower: 3500, consumptionPower: 500 }, state, client, t0 + TOLERANCE_MS);
-      expect(switched).toEqual([{ from: 3, to: 1, currentA: 13, surplusW: 3000 }]);
+      expect(switched).toEqual([{ from: 3, to: 1, currentA: 13, surplusW: 3000, capped: false }]);
     });
 
     it('does not emit anything when the off-mode stop runs (user action, not automation)', async () => {

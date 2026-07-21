@@ -173,7 +173,7 @@ export class WallboxController {
         if (client && now - this.insufficientSince >= this.config.toleranceMs) {
           await client.stopCharging();
           this.insufficientSince = null;
-          energyEvents.emit('wallbox:charging-stopped', { surplusW: Math.round(availableW) });
+          energyEvents.emit('wallbox:charging-stopped', { surplusW: Math.round(availableW), capped: availableW < surplusW });
         }
         this.lastDetails = {
           surplusW: Math.round(availableW),
@@ -190,7 +190,7 @@ export class WallboxController {
           await client.setPhases(3);
           await client.setChargingCurrent(newCurrentA);
           this.switchUpSince = null;
-          energyEvents.emit('wallbox:phases-switched', { from: 1, to: 3, currentA: newCurrentA, surplusW: Math.round(availableW) });
+          energyEvents.emit('wallbox:phases-switched', { from: 1, to: 3, currentA: newCurrentA, surplusW: Math.round(availableW), capped: availableW < surplusW });
         }
         this.lastDetails = {
           surplusW: Math.round(availableW),
@@ -207,7 +207,7 @@ export class WallboxController {
           await client.setPhases(1);
           await client.setChargingCurrent(newCurrentA);
           this.switchDownSince = null;
-          energyEvents.emit('wallbox:phases-switched', { from: 3, to: 1, currentA: newCurrentA, surplusW: Math.round(availableW) });
+          energyEvents.emit('wallbox:phases-switched', { from: 3, to: 1, currentA: newCurrentA, surplusW: Math.round(availableW), capped: availableW < surplusW });
         }
         this.lastDetails = {
           surplusW: Math.round(availableW),
@@ -255,6 +255,7 @@ export class WallboxController {
               phases: startPhases,
               currentA: startCurrentA,
               surplusW: Math.round(availableW),
+              capped: availableW < surplusW,
             });
           }
         }

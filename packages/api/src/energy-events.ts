@@ -41,10 +41,12 @@ export interface WallboxChargingStartedEvent {
   phases: 1 | 3;
   currentA: number;
   surplusW: number;
+  capped: boolean;
 }
 
 export interface WallboxChargingStoppedEvent {
   surplusW: number;
+  capped: boolean;
 }
 
 export interface WallboxPhasesSwitchedEvent {
@@ -52,6 +54,7 @@ export interface WallboxPhasesSwitchedEvent {
   to: 1 | 3;
   currentA: number;
   surplusW: number;
+  capped: boolean;
 }
 
 interface EnergyEventMap {

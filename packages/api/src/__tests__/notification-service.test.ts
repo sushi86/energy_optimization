@@ -62,25 +62,40 @@ describe('NotificationService — wallbox notifications', () => {
   });
 
   it('sends a push when pv charging starts', () => {
-    energyEvents.emit('wallbox:charging-started', { phases: 3, currentA: 8, surplusW: 5600 });
+    energyEvents.emit('wallbox:charging-started', { phases: 3, currentA: 8, surplusW: 5600, capped: false });
     expect(push.payloads).toHaveLength(1);
     expect(push.payloads[0].title).toBe('Wallbox');
     expect(push.payloads[0].tag).toBe('wallbox-charging');
     expect(push.payloads[0].body).toBe('🔌 Ladung gestartet — 3-phasig mit 8 A (Überschuss 5600 W)');
   });
 
+  it('appends the AC-limit suffix when charging-started was capped', () => {
+    energyEvents.emit('wallbox:charging-started', { phases: 3, currentA: 8, surplusW: 5600, capped: true });
+    expect(push.payloads[0].body).toBe('🔌 Ladung gestartet — 3-phasig mit 8 A (Überschuss 5600 W) — AC-Limit aktiv');
+  });
+
   it('sends a push when pv charging stops', () => {
-    energyEvents.emit('wallbox:charging-stopped', { surplusW: 800 });
+    energyEvents.emit('wallbox:charging-stopped', { surplusW: 800, capped: false });
     expect(push.payloads).toHaveLength(1);
     expect(push.payloads[0].tag).toBe('wallbox-charging');
     expect(push.payloads[0].body).toBe('⏹️ Ladung gestoppt — Überschuss zu gering (800 W)');
   });
 
+  it('appends the AC-limit suffix when charging-stopped was capped', () => {
+    energyEvents.emit('wallbox:charging-stopped', { surplusW: 800, capped: true });
+    expect(push.payloads[0].body).toBe('⏹️ Ladung gestoppt — Überschuss zu gering (800 W) — AC-Limit aktiv');
+  });
+
   it('sends a push when the phases are switched', () => {
-    energyEvents.emit('wallbox:phases-switched', { from: 3, to: 1, currentA: 13, surplusW: 3000 });
+    energyEvents.emit('wallbox:phases-switched', { from: 3, to: 1, currentA: 13, surplusW: 3000, capped: false });
     expect(push.payloads).toHaveLength(1);
     expect(push.payloads[0].tag).toBe('wallbox-phases');
     expect(push.payloads[0].body).toBe('⚡ Von 3- auf 1-phasig umgeschaltet (Überschuss 3000 W)');
+  });
+
+  it('appends the AC-limit suffix when phases-switched was capped', () => {
+    energyEvents.emit('wallbox:phases-switched', { from: 3, to: 1, currentA: 13, surplusW: 3000, capped: true });
+    expect(push.payloads[0].body).toBe('⚡ Von 3- auf 1-phasig umgeschaltet (Überschuss 3000 W) — AC-Limit aktiv');
   });
 
   it('sends a push when the vehicle is plugged in', () => {
