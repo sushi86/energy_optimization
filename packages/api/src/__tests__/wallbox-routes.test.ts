@@ -184,7 +184,6 @@ describe('wallbox routes — with AppState', () => {
       forecastCorrectionOverride: null,
       consumptionDayW: 500,
       consumptionNightW: 350,
-      multiplusRatedPowerW: 4000,
       manualModeFloorPercent: 50,
       dataDir: tmpDir,
     });
