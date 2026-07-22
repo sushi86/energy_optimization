@@ -25,6 +25,11 @@ interface GridHistorySlot {
   samples: number;
 }
 
+interface WallboxHistorySlot {
+  time: string;
+  energyWh: number;
+}
+
 function formatPower(watts: number): string {
   const abs = Math.abs(watts);
   if (abs >= 1000) {
@@ -544,20 +549,21 @@ function findPriceForSlot(prices: PriceEntry[], hour: number, minute: number): n
   return 0;
 }
 
-function ChargePlanChart({ plan, hoveredSlot, setHoveredSlot, actualFeedIn, actualBattery, actualConsumption, actualSoc, prices, pvPeakKwp, maxAcPowerW }: {
+function ChargePlanChart({ plan, hoveredSlot, setHoveredSlot, actualFeedIn, actualBattery, actualConsumption, actualWallboxCharge, actualSoc, prices, pvPeakKwp, maxAcPowerW }: {
   plan: ChargePlan;
   hoveredSlot: number | null;
   setHoveredSlot: (i: number | null) => void;
   actualFeedIn: Map<string, { feedInW: number; feedInKwh: number }>;
   actualBattery: Map<string, number>;
   actualConsumption: Map<string, number>;
+  actualWallboxCharge: Map<string, number>;
   actualSoc: Map<string, number>;
   prices: PriceEntry[];
   pvPeakKwp?: number;
   maxAcPowerW?: number;
 }) {
 
-  const [visibleSeries, setVisibleSeries] = useState({ charge: true, clipping: true, feedIn: true, consumption: true, soc: true });
+  const [visibleSeries, setVisibleSeries] = useState({ charge: true, clipping: true, feedIn: true, consumption: true, wallboxCharge: true, soc: true });
   const toggle = (key: keyof typeof visibleSeries) => setVisibleSeries(prev => ({ ...prev, [key]: !prev[key] }));
 
   // Build lookup by HH:MM key from plan slots
@@ -843,6 +849,9 @@ function ChargePlanChart({ plan, hoveredSlot, setHoveredSlot, actualFeedIn, actu
             const totalPct = hasActualHistory
               ? feedInPct + battChargePct + consPct
               : chargePct + feedInPct + consPct;
+            const actualWallboxWh = actualWallboxCharge.get(slot.key) ?? 0;
+            const wallboxW = visibleSeries.wallboxCharge ? Math.min(actualWallboxWh / 0.25, consW) : 0;
+            const wallboxPct = totalPct > 0 && consW > 0 ? (wallboxW / consW) * (consPct / totalPct) * 100 : 0;
             const isHovered = hoveredSlot === i;
             const isCurrent = slot.key === nowKey;
             const dimmed = hoveredSlot !== null && !isHovered;
@@ -918,6 +927,17 @@ function ChargePlanChart({ plan, hoveredSlot, setHoveredSlot, actualFeedIn, actu
                           }}
                         />
                       )}
+                      {wallboxW > 0 && (
+                        <div
+                          className="absolute bottom-0 w-full transition-opacity"
+                          style={{
+                            height: `${wallboxPct}%`,
+                            backgroundColor: '#991b1b',
+                            opacity: dimmed ? 0.2 : 0.9,
+                            minHeight: '1px',
+                          }}
+                        />
+                      )}
                       {feedInW > 0 && (
                         <div
                           className="absolute w-full transition-opacity"
@@ -954,6 +974,17 @@ function ChargePlanChart({ plan, hoveredSlot, setHoveredSlot, actualFeedIn, actu
                             opacity: dimmed ? 0.2 : isCurrent ? 1 : 0.6,
                             minHeight: '2px',
                             borderRadius: !(feedInW > 0) && !(clippingW > 0) && !(voluntaryW > 0) ? '2px 2px 0 0' : '0',
+                          }}
+                        />
+                      )}
+                      {wallboxW > 0 && (
+                        <div
+                          className="absolute bottom-0 w-full transition-opacity"
+                          style={{
+                            height: `${wallboxPct}%`,
+                            backgroundColor: '#991b1b',
+                            opacity: dimmed ? 0.2 : 0.9,
+                            minHeight: '1px',
                           }}
                         />
                       )}
@@ -1026,6 +1057,9 @@ function ChargePlanChart({ plan, hoveredSlot, setHoveredSlot, actualFeedIn, actu
         <button type="button" onClick={() => toggle('clipping')} className={`flex items-center gap-1 ${visibleSeries.clipping ? '' : 'opacity-30'}`}><span className="inline-block w-2 h-2 rounded-sm bg-[#eab308]" /> Clipping</button>
         <button type="button" onClick={() => toggle('feedIn')} className={`flex items-center gap-1 ${visibleSeries.feedIn ? '' : 'opacity-30'}`}><span className="inline-block w-2 h-2 rounded-sm bg-[#22c55e]" /> Einspeisung</button>
         <button type="button" onClick={() => toggle('consumption')} className={`flex items-center gap-1 ${visibleSeries.consumption ? '' : 'opacity-30'}`}><span className="inline-block w-2 h-2 rounded-sm bg-[#ef4444]" /> Verbrauch</button>
+        {actualWallboxCharge.size > 0 && (
+          <button type="button" onClick={() => toggle('wallboxCharge')} className={`flex items-center gap-1 ${visibleSeries.wallboxCharge ? '' : 'opacity-30'}`}><span className="inline-block w-2 h-2 rounded-sm bg-[#991b1b]" /> Wallbox</button>
+        )}
         <button type="button" onClick={() => toggle('soc')} className={`flex items-center gap-1 ${visibleSeries.soc ? '' : 'opacity-30'}`}><span className="inline-block w-2 h-2 rounded-full" style={{ width: '6px', height: '6px', backgroundColor: '#10EFD8' }} /> SOC</button>
       </div>
     </div>
@@ -1134,6 +1168,7 @@ export default function Dashboard() {
   const [gridHistory, setGridHistory] = useState<GridHistorySlot[]>([]);
   const [batteryHistory, setBatteryHistory] = useState<GridHistorySlot[]>([]);
   const [consumptionHistory, setConsumptionHistory] = useState<GridHistorySlot[]>([]);
+  const [wallboxHistory, setWallboxHistory] = useState<WallboxHistorySlot[]>([]);
   const [socHistory, setSocHistory] = useState<{ time: string; soc: number }[]>([]);
   const [manualSetpoint, setManualSetpoint] = useState(-5000);
   const [modeOverride, setModeOverride] = useState<string | null>(null);
@@ -1228,6 +1263,12 @@ export default function Dashboard() {
           if (Array.isArray(data?.slots)) setConsumptionHistory(data.slots);
         })
         .catch(() => {});
+      fetch('/api/wallbox/history')
+        .then((r) => r.json())
+        .then((data) => {
+          if (Array.isArray(data?.slots)) setWallboxHistory(data.slots);
+        })
+        .catch(() => {});
       fetch('/api/soc/history')
         .then((r) => r.json())
         .then((data) => {
@@ -1280,6 +1321,10 @@ export default function Dashboard() {
       .then((r) => r.json())
       .then((data) => { if (Array.isArray(data?.slots)) setConsumptionHistory(data.slots); })
       .catch(() => {});
+    fetch('/api/wallbox/history')
+      .then((r) => r.json())
+      .then((data) => { if (Array.isArray(data?.slots)) setWallboxHistory(data.slots); })
+      .catch(() => {});
     fetch('/api/soc/history')
       .then((r) => r.json())
       .then((data) => { if (Array.isArray(data?.slots)) setSocHistory(data.slots); })
@@ -1330,6 +1375,14 @@ export default function Dashboard() {
     }
     return map;
   }, [consumptionHistory]);
+
+  const actualWallboxCharge = useMemo(() => {
+    const map = new Map<string, number>();
+    for (const slot of wallboxHistory) {
+      if (slot.energyWh > 0) map.set(slot.time, slot.energyWh);
+    }
+    return map;
+  }, [wallboxHistory]);
 
   const actualSoc = useMemo(() => {
     const map = new Map<string, number>();
@@ -1756,7 +1809,7 @@ export default function Dashboard() {
       {/* Charge Plan Chart */}
       {status?.chargePlan && status.chargePlan.slots.length > 0 && (
         <div className="rounded-xl border border-[var(--border)] bg-[var(--bg-card)] p-5 mt-4">
-          <ChargePlanChart plan={status.chargePlan} hoveredSlot={hoveredSlot} setHoveredSlot={setHoveredSlot} actualFeedIn={actualFeedIn} actualBattery={actualBattery} actualConsumption={actualConsumption} actualSoc={actualSoc} prices={prices} pvPeakKwp={status.pvPeakKwp} maxAcPowerW={status.maxAcPowerW} />
+          <ChargePlanChart plan={status.chargePlan} hoveredSlot={hoveredSlot} setHoveredSlot={setHoveredSlot} actualFeedIn={actualFeedIn} actualBattery={actualBattery} actualConsumption={actualConsumption} actualWallboxCharge={actualWallboxCharge} actualSoc={actualSoc} prices={prices} pvPeakKwp={status.pvPeakKwp} maxAcPowerW={status.maxAcPowerW} />
         </div>
       )}
 
