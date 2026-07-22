@@ -8,6 +8,7 @@ const mockClientInstance = {
   setID: vi.fn(),
   setTimeout: vi.fn(),
   close: vi.fn(),
+  destroy: vi.fn(),
   readHoldingRegisters: vi.fn(),
   writeRegisters: vi.fn(),
   isOpen: false,
@@ -15,6 +16,7 @@ const mockClientInstance = {
 const mockConnectTCP = mockClientInstance.connectTCP;
 const mockSetID = mockClientInstance.setID;
 const mockClose = mockClientInstance.close;
+const mockDestroy = mockClientInstance.destroy;
 const mockReadHoldingRegisters = mockClientInstance.readHoldingRegisters;
 const mockWriteRegisters = mockClientInstance.writeRegisters;
 
@@ -26,6 +28,10 @@ function installDefaultSocketBehavior() {
   mockClose.mockImplementation((cb: () => void) => {
     mockClientInstance.isOpen = false;
     cb();
+  });
+  mockDestroy.mockImplementation((cb?: () => void) => {
+    mockClientInstance.isOpen = false;
+    cb?.();
   });
   mockWriteRegisters.mockResolvedValue(undefined);
 }
@@ -357,6 +363,38 @@ describe('WallboxClient.getState', () => {
     mockRegisters();
     await client.getState();
     expect(mockConnectTCP.mock.calls.length).toBe(connectsBefore + 1);
+  });
+
+  it('does not deadlock future requests when close() never calls back after a read error', async () => {
+    // Mirrors the real modbus-serial socket: its close() callback only fires while
+    // the socket still reports open. If the connection already died on its own
+    // (openFlag already false) before request()'s error handler calls close(), the
+    // callback never fires. Without a bounded wait, this would hang the shared
+    // request queue forever and silently stop all future polling.
+    vi.useFakeTimers();
+    try {
+      mockClientInstance.isOpen = true;
+      mockReadHoldingRegisters.mockRejectedValueOnce(new Error('Timed out'));
+      mockClose.mockImplementationOnce(() => {
+        mockClientInstance.isOpen = false;
+        // never invoke the callback
+      });
+
+      const failing = expect(client.getState()).rejects.toThrow('Timed out');
+      // A few INTER_REQUEST_DELAY_MS pauses run before the failing read, so the
+      // 5s closeAfterError timeout doesn't fire until slightly past the 5000ms mark.
+      await vi.advanceTimersByTimeAsync(6000);
+      await failing;
+
+      expect(mockDestroy).toHaveBeenCalled();
+
+      mockRegisters();
+      const recovered = expect(client.getState()).resolves.toBeTruthy();
+      await vi.advanceTimersByTimeAsync(1000);
+      await recovered;
+    } finally {
+      vi.useRealTimers();
+    }
   });
 });
 

@@ -86,10 +86,29 @@ export class WallboxClient {
       try {
         return await fn();
       } catch (err) {
-        await new Promise<void>((resolve) => this.client.close(() => resolve()));
+        await this.closeAfterError();
         throw err;
       }
     });
+  }
+
+  // modbus-serial's close() only invokes its callback while the socket still
+  // reports open at that moment; if the connection already died on its own (e.g.
+  // the peer reset it) before this runs, the callback never fires and close()
+  // hangs forever. Every request is serialized through withLock, so one stuck
+  // close deadlocks the queue and, with it, every future poll — this is what
+  // made a single connection hiccup look like a permanent, silent disconnect.
+  // Bound the wait and force-destroy the socket if close never calls back.
+  private async closeAfterError(): Promise<void> {
+    let closed = false;
+    await Promise.race([
+      new Promise<void>((resolve) => this.client.close(() => {
+        closed = true;
+        resolve();
+      })),
+      sleep(RESPONSE_TIMEOUT_MS),
+    ]);
+    if (!closed) this.client.destroy(() => undefined);
   }
 
   async connect(): Promise<void> {
