@@ -19,6 +19,7 @@ import { PvTracker } from './pv-tracker.js';
 import { ManualModeTracker } from './manual-mode-tracker.js';
 import { NotificationService } from './notification-service.js';
 import { DailySummaryService } from './daily-summary-service.js';
+import { WallboxHistoryService } from './wallbox-history-service.js';
 
 async function main() {
   const config = loadConfig();
@@ -61,6 +62,7 @@ async function main() {
   const consumptionHistoryService = new GridHistoryService(resolve(dataDir, 'consumption-history'));
   const pvHistoryService = new GridHistoryService(resolve(dataDir, 'pv-history'));
   const socHistoryService = new GridHistoryService(resolve(dataDir, 'soc-history'), 'snapshot');
+  const wallboxHistoryService = new WallboxHistoryService(resolve(dataDir, 'wallbox-history'));
 
   // Record power values on every MQTT state change
   appState.mqtt.on('stateChange', () => {
@@ -117,7 +119,10 @@ async function main() {
         ),
     }).then(() => {
       const vehicleWatcher = new WallboxVehicleWatcher();
-      client.startPolling(config.WALLBOX_POLL_INTERVAL_MS, (state) => vehicleWatcher.observe(state));
+      client.startPolling(config.WALLBOX_POLL_INTERVAL_MS, (state) => {
+        vehicleWatcher.observe(state);
+        wallboxHistoryService.recordEnergyTotalKwh(state.energyTotalKwh);
+      });
       console.log('[energy-control] EM2GO wallbox (Modbus) enabled');
     });
   }
@@ -132,7 +137,7 @@ async function main() {
   appState.setPvTracker(pvTracker, gridHistoryService, pvHistoryService);
   appState.setManualModeTracker(manualModeTracker);
 
-  const server = buildServer({ appState, inexogyService, gridHistoryService, batteryHistoryService, consumptionHistoryService, socHistoryService, pvHistoryService, nibePoller, wallboxClient, pushService, dailySummaryService });
+  const server = buildServer({ appState, inexogyService, gridHistoryService, batteryHistoryService, consumptionHistoryService, socHistoryService, pvHistoryService, nibePoller, wallboxClient, wallboxHistoryService, pushService, dailySummaryService });
   await server.listen({ port: 3001, host: '0.0.0.0' });
 
   console.log('[energy-control] Server running on http://0.0.0.0:3001');
@@ -146,6 +151,7 @@ async function main() {
     consumptionHistoryService.stop();
     pvHistoryService.stop();
     socHistoryService.stop();
+    wallboxHistoryService.stop();
     nibePoller?.stop();
     wallboxClient?.stopPolling();
     await wallboxClient?.disconnect();

@@ -17,6 +17,7 @@ import type { PushService } from './push-service.js';
 import { energyEvents } from './energy-events.js';
 import { getVapidPublicKey } from './vapid.js';
 import type { DailySummaryService } from './daily-summary-service.js';
+import type { WallboxHistoryService } from './wallbox-history-service.js';
 
 export interface ServerOptions {
   testing?: boolean;
@@ -32,6 +33,7 @@ export interface ServerOptions {
   wallboxClient?: WallboxClient;
   pushService?: PushService;
   dailySummaryService?: DailySummaryService;
+  wallboxHistoryService?: WallboxHistoryService;
 }
 
 export interface PriceEntry {
