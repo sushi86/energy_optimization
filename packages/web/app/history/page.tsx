@@ -214,7 +214,7 @@ export default function HistoryPage() {
                     <div className="w-full rounded-t-sm" style={{ backgroundColor: '#991b1b', height: `${pct}%`, minHeight: pct > 0 ? '1px' : 0 }} />
                   </div>
                   <span className="text-[8px] text-[var(--text-secondary)] mt-0.5">
-                    {(i + 1) % 5 === 1 ? i + 1 : ' '}
+                    {(i + 1) % 5 === 1 ? i + 1 : ' '}
                   </span>
                 </div>
               );
