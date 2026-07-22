@@ -130,6 +130,7 @@ export function buildServer(options: ServerOptions = {}): FastifyInstance {
   const getWallboxClient = (): WallboxClient | null => state?.getWallboxClient() ?? options.wallboxClient ?? null;
   const pushService = options.pushService;
   const dailySummaryService = options.dailySummaryService;
+  const wallboxHistoryService = options.wallboxHistoryService;
   const pvSettingsPath = options.pvSettingsPath ?? resolve(dirname(fileURLToPath(import.meta.url)), '../../../data/pv-settings.json');
 
   // WebSocket support
@@ -741,6 +742,33 @@ export function buildServer(options: ServerOptions = {}): FastifyInstance {
   });
 
   // --- Wallbox endpoints ---
+
+  app.get('/api/wallbox/history', async (request) => {
+    if (!wallboxHistoryService) {
+      return { date: '', slots: [] };
+    }
+    const query = request.query as { date?: string };
+    const tz = 'Europe/Berlin';
+    const dateStr = query.date ?? new Date().toLocaleDateString('sv-SE', { timeZone: tz });
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(dateStr)) {
+      return { date: '', slots: [] };
+    }
+    const slotsObj = wallboxHistoryService.getSlots(dateStr);
+    const slots = Object.entries(slotsObj)
+      .map(([time, slot]) => ({ time, ...slot }))
+      .sort((a, b) => a.time.localeCompare(b.time));
+    return { date: dateStr, slots };
+  });
+
+  app.get('/api/wallbox/daily-summary', async (request) => {
+    if (!wallboxHistoryService) return { summaries: [] };
+    const query = request.query as { month?: string };
+    const all = wallboxHistoryService.getDailyTotals();
+    if (query.month && /^\d{4}-\d{2}$/.test(query.month)) {
+      return { summaries: all.filter((s) => s.date.startsWith(query.month!)) };
+    }
+    return { summaries: all };
+  });
 
   app.get('/api/wallbox/status', async (_request, reply) => {
     const wallboxClient = getWallboxClient();
