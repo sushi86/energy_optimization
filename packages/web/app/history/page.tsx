@@ -11,6 +11,11 @@ interface DailySummary {
   revenueMarketCent: number;
 }
 
+interface WallboxDailySummary {
+  date: string;
+  chargedKwh: number;
+}
+
 function formatMonth(month: string): string {
   const [year, m] = month.split('-');
   const monthNames = ['Jan', 'Feb', 'Mär', 'Apr', 'Mai', 'Jun', 'Jul', 'Aug', 'Sep', 'Okt', 'Nov', 'Dez'];
@@ -41,14 +46,19 @@ function nextMonth(month: string): string {
 export default function HistoryPage() {
   const [month, setMonth] = useState(getCurrentMonth);
   const [summaries, setSummaries] = useState<DailySummary[]>([]);
+  const [wallboxSummaries, setWallboxSummaries] = useState<WallboxDailySummary[]>([]);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
     setLoading(true);
-    fetch(`/api/daily-summary?month=${month}`)
-      .then(r => r.json())
-      .then(data => setSummaries(data.summaries ?? []))
-      .catch(() => setSummaries([]))
+    Promise.all([
+      fetch(`/api/daily-summary?month=${month}`).then((r) => r.json()).catch(() => ({ summaries: [] })),
+      fetch(`/api/wallbox/daily-summary?month=${month}`).then((r) => r.json()).catch(() => ({ summaries: [] })),
+    ])
+      .then(([daily, wallbox]) => {
+        setSummaries(daily.summaries ?? []);
+        setWallboxSummaries(wallbox.summaries ?? []);
+      })
       .finally(() => setLoading(false));
   }, [month]);
 
@@ -56,6 +66,8 @@ export default function HistoryPage() {
   const days = daysInMonth(month);
 
   const byDate = new Map(summaries.map(s => [s.date, s]));
+  const wallboxByDate = new Map(wallboxSummaries.map((s) => [s.date, s]));
+  const maxWallboxKwh = Math.max(...wallboxSummaries.map((s) => s.chargedKwh), 1);
 
   // Max of either revenue type for consistent scaling
   const maxRevenue = Math.max(
@@ -162,6 +174,47 @@ export default function HistoryPage() {
                   {/* Day label – always reserve space for consistent baseline */}
                   <span className="text-[8px] text-[var(--text-secondary)] mt-0.5">
                     {(i + 1) % 5 === 1 ? i + 1 : '\u00A0'}
+                  </span>
+                </div>
+              );
+            })}
+          </div>
+        )}
+      </div>
+
+      {/* Wallbox charging chart */}
+      <div className="bg-[var(--bg-card)] border border-[var(--border)] rounded-lg p-3 mt-4">
+        <div className="flex items-center gap-4 mb-3 text-xs text-[var(--text-secondary)]">
+          <span className="flex items-center gap-1">
+            <span className="inline-block w-3 h-3 rounded-sm" style={{ backgroundColor: '#991b1b' }} /> Wallbox geladen
+          </span>
+        </div>
+
+        {loading ? (
+          <div className="h-40 flex items-center justify-center text-[var(--text-secondary)] text-sm">Laden...</div>
+        ) : wallboxSummaries.length === 0 ? (
+          <div className="h-40 flex items-center justify-center text-[var(--text-secondary)] text-sm">Keine Daten für {formatMonth(month)}</div>
+        ) : (
+          <div className="flex items-end gap-px" style={{ height: '160px' }}>
+            {Array.from({ length: days }, (_, i) => {
+              const day = (i + 1).toString().padStart(2, '0');
+              const date = `${month}-${day}`;
+              const summary = wallboxByDate.get(date);
+              const pct = summary ? (summary.chargedKwh / maxWallboxKwh) * 100 : 0;
+
+              return (
+                <div key={date} className="flex-1 min-w-0 flex flex-col items-center h-full justify-end group relative">
+                  {summary && (
+                    <div className="absolute -top-10 left-1/2 -translate-x-1/2 hidden group-hover:block whitespace-nowrap text-[10px] bg-[var(--bg-card)] border border-[var(--border)] rounded px-2 py-1 z-10">
+                      <div className="font-medium">{day}.{month.split('-')[1]}.</div>
+                      <div>{summary.chargedKwh.toFixed(1)} kWh</div>
+                    </div>
+                  )}
+                  <div className="w-full flex justify-center items-end" style={{ height: '90%' }}>
+                    <div className="w-full rounded-t-sm" style={{ backgroundColor: '#991b1b', height: `${pct}%`, minHeight: pct > 0 ? '1px' : 0 }} />
+                  </div>
+                  <span className="text-[8px] text-[var(--text-secondary)] mt-0.5">
+                    {(i + 1) % 5 === 1 ? i + 1 : ' '}
                   </span>
                 </div>
               );
