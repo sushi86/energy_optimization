@@ -266,12 +266,10 @@ export class AppState {
       if (!prev || prev.mode !== 'winter') {
         console.log(`[regulate] Winter mode active — ${result.reason}`);
       }
-    } else {
-      if (!prev || prev.setpointW !== result.setpointW) {
-        console.log(`[regulate] Setpoint: ${result.setpointW}W | PV: ${systemState.pvPower}W | Consumption: ${systemState.consumptionPower}W | SOC: ${systemState.batterySoc}% | ${result.reason}`);
-      }
-      await this.mqtt.setGridSetpoint(result.setpointW);
+    } else if (!prev || prev.setpointW !== result.setpointW) {
+      console.log(`[regulate] Setpoint: ${result.setpointW}W | PV: ${systemState.pvPower}W | Consumption: ${systemState.consumptionPower}W | SOC: ${systemState.batterySoc}% | ${result.reason}`);
     }
+    await this.mqtt.setGridSetpoint(result.setpointW);
   }
 
   setPvTracker(tracker: PvTracker, gridHistory: GridHistoryService, pvHistory?: GridHistoryService): void {

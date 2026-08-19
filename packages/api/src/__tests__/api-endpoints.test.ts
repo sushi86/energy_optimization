@@ -156,6 +156,26 @@ describe('API Endpoints', () => {
     expect(res.statusCode).toBe(409);
   });
 
+  it('sends the forced 0W setpoint over MQTT when winter mode is manually activated', async () => {
+    const received: string[] = [];
+    broker.on('publish', (packet) => {
+      if (packet.topic.includes('AcPowerSetPoint') && packet.payload.length > 0) {
+        received.push(packet.payload.toString());
+      }
+    });
+
+    await app.inject({
+      method: 'POST',
+      url: '/api/controller/mode',
+      payload: { mode: 'winter' },
+    });
+    await appState.regulate();
+    await new Promise((r) => setTimeout(r, 100));
+
+    expect(received.length).toBeGreaterThan(0);
+    expect(JSON.parse(received[received.length - 1])).toEqual({ value: 0 });
+  });
+
   it('GET /api/forecast returns forecast', async () => {
     const res = await app.inject({ method: 'GET', url: '/api/forecast' });
     expect(res.statusCode).toBe(200);
