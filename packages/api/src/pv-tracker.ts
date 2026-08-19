@@ -1,18 +1,15 @@
-import { energyEvents, type MorningBriefingEvent, type ProductionEndedEvent } from './energy-events.js';
-import type { Forecast } from './vrm-service.js';
+import { energyEvents, type ProductionEndedEvent } from './energy-events.js';
 import type { ChargePlan } from './charge-plan.js';
 import type { PriceEntry } from './server.js';
 import type { GridHistoryService } from './grid-history-service.js';
 
 const PV_THRESHOLD_W = 50;
-const SLOT_INTERVAL_MS = 15 * 60 * 1000; // 15 minutes
 const EVENING_DELAY_MS = 15 * 60 * 1000; // 15 minutes below threshold
 const EARLIEST_EVENING_HOUR = 14; // Don't trigger evening event before 14:00
 
 export interface PvCheckContext {
   pvPowerW: number;
   batterySoc: number;
-  forecast: Forecast;
   chargePlan: ChargePlan | null;
   prices: PriceEntry[];
   gridHistoryService?: GridHistoryService;
@@ -21,10 +18,7 @@ export interface PvCheckContext {
 }
 
 export class PvTracker {
-  private productionSlotCount = 0;
-  private lastSlotMs = 0;
   private belowThresholdSince: number | null = null;
-  private morningSent = false;
   private eveningSent = false;
   private currentDate: string;
   private hadProductionToday = false;
@@ -42,29 +36,6 @@ export class PvTracker {
     // Track that we had production today (for evening event eligibility)
     if (pvAboveThreshold) {
       this.hadProductionToday = true;
-    }
-
-    // --- Morning detection: count 15-min slots with PV production ---
-    if (pvAboveThreshold && !this.morningSent) {
-      const currentSlotMs = Math.floor(now / SLOT_INTERVAL_MS) * SLOT_INTERVAL_MS;
-      if (currentSlotMs > this.lastSlotMs) {
-        this.productionSlotCount++;
-        this.lastSlotMs = currentSlotMs;
-      }
-
-      if (this.productionSlotCount >= 4) {
-        this.morningSent = true;
-        if (ctx.chargePlan) {
-          const event: MorningBriefingEvent = {
-            forecast: ctx.forecast,
-            chargePlan: ctx.chargePlan,
-            prices: ctx.prices,
-            currentSoc: ctx.batterySoc,
-          };
-          console.log('[pv-tracker] Morning briefing triggered');
-          energyEvents.emit('pv:morning-briefing', event);
-        }
-      }
     }
 
     // --- Evening detection: PV below threshold for >15min after 14:00 ---
@@ -158,10 +129,7 @@ export class PvTracker {
     const today = this.todayStr();
     if (today !== this.currentDate) {
       this.currentDate = today;
-      this.productionSlotCount = 0;
-      this.lastSlotMs = 0;
       this.belowThresholdSince = null;
-      this.morningSent = false;
       this.eveningSent = false;
       this.hadProductionToday = false;
       console.log('[pv-tracker] New day — reset');

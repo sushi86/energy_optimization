@@ -136,7 +136,10 @@ export class Controller {
       };
     }
 
-    // Winter mode check
+    // Winter mode check — either manually forced or automatically triggered by low forecast
+    if (this.mode === 'winter') {
+      return { setpointW: 0, mode: 'winter', reason: 'Winter mode: manually activated', details: noDetails };
+    }
     if (forecast.totalKwh < batteryCapacityKwh * winterModeThresholdFactor) {
       return { setpointW: 0, mode: 'winter', reason: 'Winter mode: forecast below threshold', details: noDetails };
     }

@@ -48,6 +48,8 @@ export default function HistoryPage() {
   const [summaries, setSummaries] = useState<DailySummary[]>([]);
   const [wallboxSummaries, setWallboxSummaries] = useState<WallboxDailySummary[]>([]);
   const [loading, setLoading] = useState(true);
+  const [activeFeedInDay, setActiveFeedInDay] = useState<string | null>(null);
+  const [activeWallboxDay, setActiveWallboxDay] = useState<string | null>(null);
 
   useEffect(() => {
     setLoading(true);
@@ -147,37 +149,64 @@ export default function HistoryPage() {
         ) : summaries.length === 0 ? (
           <div className="h-40 flex items-center justify-center text-[var(--text-secondary)] text-sm">Keine Daten für {formatMonth(month)}</div>
         ) : (
-          <div className="flex items-end gap-px" style={{ height: '160px' }}>
-            {Array.from({ length: days }, (_, i) => {
-              const day = (i + 1).toString().padStart(2, '0');
-              const date = `${month}-${day}`;
-              const summary = byDate.get(date);
-              const fixedPct = summary ? (summary.revenueFixedCent / maxRevenue) * 100 : 0;
-              const marketPct = summary ? (summary.revenueMarketCent / maxRevenue) * 100 : 0;
+          <div className="flex" style={{ height: '160px' }}>
+            {/* Y-axis labels */}
+            <div className="flex flex-col justify-between text-[8px] text-[var(--text-secondary)] text-right leading-none pr-1 shrink-0" style={{ height: '90%', width: '2.25rem' }}>
+              <span>{(maxRevenue / 100).toFixed(2)}€</span>
+              <span>{(maxRevenue / 200).toFixed(2)}€</span>
+              <span>0€</span>
+            </div>
+            <div className="flex-1 flex flex-col">
+              {/* Bars + gridlines */}
+              <div className="relative flex items-end gap-px" style={{ height: '90%' }}>
+                <div className="absolute inset-0 flex flex-col justify-between pointer-events-none">
+                  <div className="border-t border-dashed border-[var(--border)]" />
+                  <div className="border-t border-dashed border-[var(--border)]" />
+                  <div className="border-t border-dashed border-[var(--border)]" />
+                </div>
+                {Array.from({ length: days }, (_, i) => {
+                  const day = (i + 1).toString().padStart(2, '0');
+                  const date = `${month}-${day}`;
+                  const summary = byDate.get(date);
+                  const fixedPct = summary ? (summary.revenueFixedCent / maxRevenue) * 100 : 0;
+                  const marketPct = summary ? (summary.revenueMarketCent / maxRevenue) * 100 : 0;
+                  const isActive = activeFeedInDay === date;
 
-              return (
-                <div key={date} className="flex-1 min-w-0 flex flex-col items-center h-full justify-end group relative">
-                  {/* Tooltip */}
-                  {summary && (
-                    <div className="absolute -top-16 left-1/2 -translate-x-1/2 hidden group-hover:block whitespace-nowrap text-[10px] bg-[var(--bg-card)] border border-[var(--border)] rounded px-2 py-1 z-10">
-                      <div className="font-medium">{day}.{month.split('-')[1]}.</div>
-                      <div>Einspeisung: {summary.feedInKwh.toFixed(1)} kWh</div>
-                      <div className="text-amber-400">EEG: {(summary.revenueFixedCent / 100).toFixed(2)}€</div>
-                      <div className="text-emerald-400">Börse: {(summary.revenueMarketCent / 100).toFixed(2)}€</div>
+                  return (
+                    <div
+                      key={date}
+                      className="flex-1 min-w-0 flex flex-col items-center h-full justify-end relative"
+                      onMouseEnter={() => summary && setActiveFeedInDay(date)}
+                      onMouseLeave={() => setActiveFeedInDay(null)}
+                      onClick={() => summary && setActiveFeedInDay(isActive ? null : date)}
+                    >
+                      {/* Tooltip */}
+                      {summary && isActive && (
+                        <div className="absolute -top-16 left-1/2 -translate-x-1/2 whitespace-nowrap text-[10px] bg-[var(--bg-card)] border border-[var(--border)] rounded px-2 py-1 z-10">
+                          <div className="font-medium">{day}.{month.split('-')[1]}.</div>
+                          <div>Einspeisung: {summary.feedInKwh.toFixed(1)} kWh</div>
+                          <div className="text-amber-400">EEG: {(summary.revenueFixedCent / 100).toFixed(2)}€</div>
+                          <div className="text-emerald-400">Börse: {(summary.revenueMarketCent / 100).toFixed(2)}€</div>
+                        </div>
+                      )}
+                      {/* Side-by-side bars */}
+                      <div className="w-full h-full flex gap-px justify-center items-end">
+                        <div className={`flex-1 bg-amber-400 rounded-t-sm ${isActive ? 'brightness-125' : ''}`} style={{ height: `${fixedPct}%`, minHeight: fixedPct > 0 ? '1px' : 0 }} />
+                        <div className={`flex-1 bg-emerald-400 rounded-t-sm ${isActive ? 'brightness-125' : ''}`} style={{ height: `${marketPct}%`, minHeight: marketPct > 0 ? '1px' : 0 }} />
+                      </div>
                     </div>
-                  )}
-                  {/* Side-by-side bars */}
-                  <div className="w-full flex gap-px justify-center items-end" style={{ height: '90%' }}>
-                    <div className="flex-1 bg-amber-400 rounded-t-sm" style={{ height: `${fixedPct}%`, minHeight: fixedPct > 0 ? '1px' : 0 }} />
-                    <div className="flex-1 bg-emerald-400 rounded-t-sm" style={{ height: `${marketPct}%`, minHeight: marketPct > 0 ? '1px' : 0 }} />
-                  </div>
-                  {/* Day label – always reserve space for consistent baseline */}
-                  <span className="text-[8px] text-[var(--text-secondary)] mt-0.5">
+                  );
+                })}
+              </div>
+              {/* Day labels – always reserve space for consistent baseline */}
+              <div className="flex gap-px mt-0.5">
+                {Array.from({ length: days }, (_, i) => (
+                  <span key={i} className="flex-1 min-w-0 text-center text-[8px] text-[var(--text-secondary)]">
                     {(i + 1) % 5 === 1 ? i + 1 : '\u00A0'}
                   </span>
-                </div>
-              );
-            })}
+                ))}
+              </div>
+            </div>
           </div>
         )}
       </div>
@@ -195,30 +224,58 @@ export default function HistoryPage() {
         ) : wallboxSummaries.length === 0 ? (
           <div className="h-40 flex items-center justify-center text-[var(--text-secondary)] text-sm">Keine Daten für {formatMonth(month)}</div>
         ) : (
-          <div className="flex items-end gap-px" style={{ height: '160px' }}>
-            {Array.from({ length: days }, (_, i) => {
-              const day = (i + 1).toString().padStart(2, '0');
-              const date = `${month}-${day}`;
-              const summary = wallboxByDate.get(date);
-              const pct = summary ? (summary.chargedKwh / maxWallboxKwh) * 100 : 0;
+          <div className="flex" style={{ height: '160px' }}>
+            {/* Y-axis labels */}
+            <div className="flex flex-col justify-between text-[8px] text-[var(--text-secondary)] text-right leading-none pr-1 shrink-0" style={{ height: '90%', width: '2.25rem' }}>
+              <span>{maxWallboxKwh.toFixed(1)} kWh</span>
+              <span>{(maxWallboxKwh / 2).toFixed(1)} kWh</span>
+              <span>0</span>
+            </div>
+            <div className="flex-1 flex flex-col">
+              {/* Bars + gridlines */}
+              <div className="relative flex items-end gap-px" style={{ height: '90%' }}>
+                <div className="absolute inset-0 flex flex-col justify-between pointer-events-none">
+                  <div className="border-t border-dashed border-[var(--border)]" />
+                  <div className="border-t border-dashed border-[var(--border)]" />
+                  <div className="border-t border-dashed border-[var(--border)]" />
+                </div>
+                {Array.from({ length: days }, (_, i) => {
+                  const day = (i + 1).toString().padStart(2, '0');
+                  const date = `${month}-${day}`;
+                  const summary = wallboxByDate.get(date);
+                  const pct = summary ? (summary.chargedKwh / maxWallboxKwh) * 100 : 0;
+                  const isActive = activeWallboxDay === date;
 
-              return (
-                <div key={date} className="flex-1 min-w-0 flex flex-col items-center h-full justify-end group relative">
-                  {summary && (
-                    <div className="absolute -top-10 left-1/2 -translate-x-1/2 hidden group-hover:block whitespace-nowrap text-[10px] bg-[var(--bg-card)] border border-[var(--border)] rounded px-2 py-1 z-10">
-                      <div className="font-medium">{day}.{month.split('-')[1]}.</div>
-                      <div>{summary.chargedKwh.toFixed(1)} kWh</div>
+                  return (
+                    <div
+                      key={date}
+                      className="flex-1 min-w-0 flex flex-col items-center h-full justify-end relative"
+                      onMouseEnter={() => summary && setActiveWallboxDay(date)}
+                      onMouseLeave={() => setActiveWallboxDay(null)}
+                      onClick={() => summary && setActiveWallboxDay(isActive ? null : date)}
+                    >
+                      {summary && isActive && (
+                        <div className="absolute -top-10 left-1/2 -translate-x-1/2 whitespace-nowrap text-[10px] bg-[var(--bg-card)] border border-[var(--border)] rounded px-2 py-1 z-10">
+                          <div className="font-medium">{day}.{month.split('-')[1]}.</div>
+                          <div>{summary.chargedKwh.toFixed(1)} kWh</div>
+                        </div>
+                      )}
+                      <div className="w-full h-full flex justify-center items-end">
+                        <div className={`w-full rounded-t-sm ${isActive ? 'brightness-125' : ''}`} style={{ backgroundColor: '#991b1b', height: `${pct}%`, minHeight: pct > 0 ? '1px' : 0 }} />
+                      </div>
                     </div>
-                  )}
-                  <div className="w-full flex justify-center items-end" style={{ height: '90%' }}>
-                    <div className="w-full rounded-t-sm" style={{ backgroundColor: '#991b1b', height: `${pct}%`, minHeight: pct > 0 ? '1px' : 0 }} />
-                  </div>
-                  <span className="text-[8px] text-[var(--text-secondary)] mt-0.5">
+                  );
+                })}
+              </div>
+              {/* Day labels – always reserve space for consistent baseline */}
+              <div className="flex gap-px mt-0.5">
+                {Array.from({ length: days }, (_, i) => (
+                  <span key={i} className="flex-1 min-w-0 text-center text-[8px] text-[var(--text-secondary)]">
                     {(i + 1) % 5 === 1 ? i + 1 : ' '}
                   </span>
-                </div>
-              );
-            })}
+                ))}
+              </div>
+            </div>
           </div>
         )}
       </div>

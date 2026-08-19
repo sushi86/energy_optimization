@@ -166,8 +166,14 @@ export function buildServer(options: ServerOptions = {}): FastifyInstance {
       // Only compute charge plan when prices are available (or price optimization is off)
       if (hasPrices || !config.priceOptimization) {
         try {
-          const vrmForecast = state.vrm.getForecast();
-          const solarForecast = state.forecastSolar.getForecast();
+          // Honour the pv-settings source toggles like every other forecast
+          // consumer does — a disabled source must not sneak into the plan via
+          // the broadcast, or its correction factor is derived from a curve the
+          // dashboard never draws.
+          const pvS = loadPvSettings(pvSettingsPath);
+          const emptyForecast = { hours: [], totalKwh: 0, intervalHours: 1 };
+          const vrmForecast = pvS.vrmForecastEnabled ? state.vrm.getForecast() : emptyForecast;
+          const solarForecast = pvS.forecastSolarEnabled ? state.forecastSolar.getForecast() : emptyForecast;
           const ensemble = computeEnsembleForecast(vrmForecast, solarForecast);
           const cachedPrices = hasPrices ? priceCache!.entries : [];
           chargePlanData = computeChargePlan(ensemble, cachedPrices, {
@@ -186,6 +192,7 @@ export function buildServer(options: ServerOptions = {}): FastifyInstance {
             activeMorningDischargeMinSocPercent: config.activeMorningDischargeMinSocPercent,
             actualPvPowerW: s.pvPower,
             forecastCorrectionOverride: config.forecastCorrectionOverride,
+            pvPeakKwp: pvS.kwp,
           });
         } catch (e) {
           console.error('[ws] chargePlan error:', (e as Error).message);
@@ -545,92 +552,58 @@ export function buildServer(options: ServerOptions = {}): FastifyInstance {
     const query = (request.query as { type?: string });
     const type = query.type ?? 'simple';
 
-    if (type === 'morning' || type === 'evening') {
+    if (type === 'evening') {
       const config = state.getConfig();
-      const pvS = loadPvSettings(pvSettingsPath);
-      const emptyForecast = { hours: [], totalKwh: 0, intervalHours: 1 };
-      const vrmForecast = pvS.vrmForecastEnabled ? state.vrm.getForecast() : emptyForecast;
-      const solarForecast = pvS.forecastSolarEnabled ? state.forecastSolar.getForecast() : emptyForecast;
-      const ensemble = computeEnsembleForecast(vrmForecast, solarForecast);
-      const systemState = state.mqtt.getState();
 
       let prices: PriceEntry[] = [];
       try { prices = await fetchPrices(); } catch { /* optional */ }
 
-      const plan = computeChargePlan(ensemble, prices, {
-        currentSoc: systemState.batterySoc,
-        batteryCapacityKwh: config.batteryCapacityKwh,
-        targetSocPercent: config.targetSocPercent,
-        minSocPercent: config.minSocPercent,
-        maxAcPowerW: config.maxAcPowerW,
-        feedInRateCentPerKwh: config.feedInRateCentPerKwh,
-        consumptionDayW: config.consumptionDayW,
-        consumptionNightW: config.consumptionNightW,
-        priceOptimization: config.priceOptimization,
-        allowFeedInNegativePrice: config.allowFeedInNegativePrice,
-        preferredMaxChargeW: config.preferredMaxChargeW,
-        activeMorningDischarge: config.activeMorningDischarge,
-        activeMorningDischargeMinSocPercent: config.activeMorningDischargeMinSocPercent,
-        actualPvPowerW: systemState.pvPower,
-        forecastCorrectionOverride: config.forecastCorrectionOverride,
-      });
+      // Use actual historical values for evening summary test
+      let actualPvKwh = 0;
+      let actualFeedInKwh = 0;
+      let actualRevenueFixedCent = 0;
+      let actualRevenueMarketCent = 0;
 
-      if (type === 'morning') {
-        const totalPvKwh = plan.slots.reduce((s, sl) => s + sl.forecastW * 0.25 / 1000, 0);
-        await pushService.sendNotification({
-          title: 'Morgen-Briefing',
-          body: `☀️ ${totalPvKwh.toFixed(1)} kWh · ➡️ ${plan.totalFeedInKwh.toFixed(1)} kWh · 🔋 ${systemState.batterySoc.toFixed(0)}%`,
-          url: '/scenario-decision',
-          tag: 'morning-briefing',
-        });
-      } else {
-        // Use actual historical values for evening summary test
-        let actualPvKwh = 0;
-        let actualFeedInKwh = 0;
-        let actualRevenueFixedCent = 0;
-        let actualRevenueMarketCent = 0;
-
-        if (gridHistoryService) {
-          const gridSlots = gridHistoryService.getSlots();
-          for (const slot of Object.values(gridSlots)) {
-            if (slot.avgPowerW < 0) {
-              actualFeedInKwh += Math.abs(slot.energyWh) / 1000;
-            }
-          }
-          actualRevenueFixedCent = actualFeedInKwh * config.feedInRateCentPerKwh;
-
-          // Market revenue from actual prices
-          if (prices.length > 0) {
-            const todayParts = new Intl.DateTimeFormat('en-CA', { timeZone: 'Europe/Berlin' }).format(new Date());
-            for (const [slotKey, slot] of Object.entries(gridSlots)) {
-              if (slot.avgPowerW >= 0) continue;
-              const slotFeedIn = Math.abs(slot.energyWh) / 1000;
-              const slotDate = new Date(`${todayParts}T${slotKey}:00`);
-              const slotTs = Math.floor(slotDate.getTime() / 1000);
-              let slotPrice: number | null = null;
-              for (let i = prices.length - 1; i >= 0; i--) {
-                if (prices[i].timestamp <= slotTs) { slotPrice = prices[i].price; break; }
-              }
-              if (slotPrice != null) actualRevenueMarketCent += slotFeedIn * (slotPrice / 10);
-            }
+      if (gridHistoryService) {
+        const gridSlots = gridHistoryService.getSlots();
+        for (const slot of Object.values(gridSlots)) {
+          if (slot.avgPowerW < 0) {
+            actualFeedInKwh += Math.abs(slot.energyWh) / 1000;
           }
         }
+        actualRevenueFixedCent = actualFeedInKwh * config.feedInRateCentPerKwh;
 
-        if (pvHistoryService) {
-          const pvSlots = pvHistoryService.getSlots();
-          for (const slot of Object.values(pvSlots)) {
-            if (slot.avgPowerW > 0) actualPvKwh += Math.abs(slot.energyWh) / 1000;
+        // Market revenue from actual prices
+        if (prices.length > 0) {
+          const todayParts = new Intl.DateTimeFormat('en-CA', { timeZone: 'Europe/Berlin' }).format(new Date());
+          for (const [slotKey, slot] of Object.entries(gridSlots)) {
+            if (slot.avgPowerW >= 0) continue;
+            const slotFeedIn = Math.abs(slot.energyWh) / 1000;
+            const slotDate = new Date(`${todayParts}T${slotKey}:00`);
+            const slotTs = Math.floor(slotDate.getTime() / 1000);
+            let slotPrice: number | null = null;
+            for (let i = prices.length - 1; i >= 0; i--) {
+              if (prices[i].timestamp <= slotTs) { slotPrice = prices[i].price; break; }
+            }
+            if (slotPrice != null) actualRevenueMarketCent += slotFeedIn * (slotPrice / 10);
           }
         }
-
-        const totalRevenueEur = ((actualRevenueFixedCent + actualRevenueMarketCent) / 100).toFixed(2);
-        await pushService.sendNotification({
-          title: 'Tages-Zusammenfassung',
-          body: `☀️ ${actualPvKwh.toFixed(1)} kWh · ➡️ ${actualFeedInKwh.toFixed(1)} kWh · 💵 ${totalRevenueEur}€`,
-          url: '/',
-          tag: 'evening-summary',
-        });
       }
+
+      if (pvHistoryService) {
+        const pvSlots = pvHistoryService.getSlots();
+        for (const slot of Object.values(pvSlots)) {
+          if (slot.avgPowerW > 0) actualPvKwh += Math.abs(slot.energyWh) / 1000;
+        }
+      }
+
+      const totalRevenueEur = ((actualRevenueFixedCent + actualRevenueMarketCent) / 100).toFixed(2);
+      await pushService.sendNotification({
+        title: 'Tages-Zusammenfassung',
+        body: `☀️ ${actualPvKwh.toFixed(1)} kWh · ➡️ ${actualFeedInKwh.toFixed(1)} kWh · 💵 ${totalRevenueEur}€`,
+        url: '/',
+        tag: 'evening-summary',
+      });
     } else {
       await pushService.sendNotification({
         title: 'Energy Control',
@@ -642,87 +615,6 @@ export function buildServer(options: ServerOptions = {}): FastifyInstance {
 
     return { ok: true, subscribers: pushService.getSubscriptionCount() };
   });
-
-  // --- Scenario endpoint: compute charge plans for multiple correction factors ---
-
-  app.get('/api/charge-plan/scenarios', async (request, reply) => {
-    if (!state) return reply.code(500).send({ error: 'AppState not initialized' });
-
-    const query = request.query as { factors?: string };
-    const factorStrs = (query.factors ?? '0.5,1.25').split(',');
-    const factors = factorStrs.map(Number).filter(n => !isNaN(n) && n >= 0.1 && n <= 2.0);
-
-    const config = state.getConfig();
-    const pvS = loadPvSettings(pvSettingsPath);
-    const emptyForecast = { hours: [], totalKwh: 0, intervalHours: 1 };
-    const vrmForecast = pvS.vrmForecastEnabled ? state.vrm.getForecast() : emptyForecast;
-    const solarForecast = pvS.forecastSolarEnabled ? state.forecastSolar.getForecast() : emptyForecast;
-    const ensemble = computeEnsembleForecast(vrmForecast, solarForecast);
-    const systemState = state.mqtt.getState();
-
-    let prices: PriceEntry[] = [];
-    try { prices = await fetchPrices(); } catch { /* optional */ }
-
-    const scenarios = factors.map(factor => {
-      try {
-        const plan = computeChargePlan(ensemble, prices, {
-          currentSoc: systemState.batterySoc,
-          batteryCapacityKwh: config.batteryCapacityKwh,
-          targetSocPercent: config.targetSocPercent,
-          minSocPercent: config.minSocPercent,
-          maxAcPowerW: config.maxAcPowerW,
-          feedInRateCentPerKwh: config.feedInRateCentPerKwh,
-          consumptionDayW: config.consumptionDayW,
-          consumptionNightW: config.consumptionNightW,
-          priceOptimization: config.priceOptimization,
-          allowFeedInNegativePrice: config.allowFeedInNegativePrice,
-          preferredMaxChargeW: config.preferredMaxChargeW,
-          activeMorningDischarge: config.activeMorningDischarge,
-          activeMorningDischargeMinSocPercent: config.activeMorningDischargeMinSocPercent,
-          actualPvPowerW: systemState.pvPower,
-          forecastCorrectionOverride: factor,
-        });
-        // Compute total corrected PV forecast
-        const totalPvKwh = plan.slots.reduce((s, sl) => s + sl.forecastW * 0.25 / 1000, 0);
-        return {
-          factor,
-          totalPvKwh: Math.round(totalPvKwh * 100) / 100,
-          totalFeedInKwh: plan.totalFeedInKwh,
-          totalRevenueFixedCent: plan.totalRevenueFixedCent,
-          totalRevenueMarketCent: plan.totalRevenueMarketCent,
-          slots: plan.slots,
-        };
-      } catch {
-        return { factor, error: 'Failed to compute plan' };
-      }
-    });
-
-    // Compute the auto correction factor (what the system uses without override)
-    let autoFactor: number | null = null;
-    try {
-      const autoPlan = computeChargePlan(ensemble, prices, {
-        currentSoc: systemState.batterySoc,
-        batteryCapacityKwh: config.batteryCapacityKwh,
-        targetSocPercent: config.targetSocPercent,
-        minSocPercent: config.minSocPercent,
-        maxAcPowerW: config.maxAcPowerW,
-        feedInRateCentPerKwh: config.feedInRateCentPerKwh,
-        consumptionDayW: config.consumptionDayW,
-        consumptionNightW: config.consumptionNightW,
-        priceOptimization: config.priceOptimization,
-        allowFeedInNegativePrice: config.allowFeedInNegativePrice,
-        preferredMaxChargeW: config.preferredMaxChargeW,
-        activeMorningDischarge: config.activeMorningDischarge,
-        activeMorningDischargeMinSocPercent: config.activeMorningDischargeMinSocPercent,
-        actualPvPowerW: systemState.pvPower,
-      });
-      autoFactor = autoPlan.forecastCorrectionFactor;
-    } catch { /* optional */ }
-
-    return { scenarios, currentFactor: config.forecastCorrectionOverride, autoFactor };
-  });
-
-  // --- Daily summary endpoints ---
 
   app.get('/api/daily-summary', async (request) => {
     if (!dailySummaryService) return { summaries: [] };

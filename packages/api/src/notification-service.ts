@@ -1,4 +1,4 @@
-import { energyEvents, type MorningBriefingEvent, type ProductionEndedEvent, type TemperatureHighEvent, type SwitchedToManualEvent, type ManualDischargeEvent, type AutoRestoredEvent, type WallboxChargingStartedEvent, type WallboxChargingStoppedEvent, type WallboxPhasesSwitchedEvent } from './energy-events.js';
+import { energyEvents, type ProductionEndedEvent, type TemperatureHighEvent, type SwitchedToManualEvent, type ManualDischargeEvent, type AutoRestoredEvent, type WallboxChargingStartedEvent, type WallboxChargingStoppedEvent, type WallboxPhasesSwitchedEvent } from './energy-events.js';
 import type { PushService } from './push-service.js';
 
 function formatKwh(kwh: number): string {
@@ -7,7 +7,6 @@ function formatKwh(kwh: number): string {
 
 export class NotificationService {
   constructor(private pushService: PushService) {
-    energyEvents.on('pv:morning-briefing', (event) => this.handleMorningBriefing(event));
     energyEvents.on('pv:production-ended', (event) => this.handleProductionEnded(event));
     energyEvents.on('mppt:temperature-high', (event) => this.handleTemperatureHigh(event));
     energyEvents.on('controller:switched-to-manual', (event) => this.handleSwitchedToManual(event));
@@ -19,18 +18,6 @@ export class NotificationService {
     energyEvents.on('wallbox:vehicle-plugged', () => this.handleWallboxVehicle(true));
     energyEvents.on('wallbox:vehicle-unplugged', () => this.handleWallboxVehicle(false));
     console.log('[notifications] Service started');
-  }
-
-  private handleMorningBriefing(event: MorningBriefingEvent): void {
-    const { chargePlan, currentSoc } = event;
-    const totalPvKwh = chargePlan.slots.reduce((s, sl) => s + sl.forecastW * 0.25 / 1000, 0);
-
-    void this.pushService.sendNotification({
-      title: 'Morgen-Briefing',
-      body: `☀️ ${formatKwh(totalPvKwh)} kWh · ➡️ ${formatKwh(chargePlan.totalFeedInKwh)} kWh · 🔋 ${currentSoc.toFixed(0)}%`,
-      url: '/scenario-decision',
-      tag: 'morning-briefing',
-    });
   }
 
   private handleProductionEnded(event: ProductionEndedEvent): void {

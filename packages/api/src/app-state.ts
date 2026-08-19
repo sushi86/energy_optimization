@@ -5,7 +5,7 @@ import { WallboxController, type WallboxControllerDeps } from './wallbox/Wallbox
 import type { WallboxClient } from './wallbox/WallboxClient.js';
 import { ForecastSolarService } from './forecast-solar-service.js';
 import { computeEnsembleForecast } from './ensemble-forecast.js';
-import { computeChargePlan } from './charge-plan.js';
+import { computeChargePlan, computeRemainingForecastKwh } from './charge-plan.js';
 import { loadPvSettings, savePvSettings, type PvSettings } from './pv-settings.js';
 import { resolve, dirname } from 'path';
 import { fileURLToPath } from 'url';
@@ -56,8 +56,6 @@ export class AppState {
   private configOverridesPath: string;
   private lastRegulationTime: Date = new Date();
   private lastRegulationDate: string = new Date().toLocaleDateString('sv-SE', { timeZone: 'Europe/Berlin' });
-  /** Samples of raw correction factors within each 15-min slot for averaging */
-  private correctionSamples: Array<{ slotMs: number; factor: number }> = [];
   private pvTracker: PvTracker | null = null;
   private manualModeTracker: ManualModeTracker | null = null;
   private gridHistoryForTracker: GridHistoryService | null = null;
@@ -165,7 +163,6 @@ export class AppState {
       if (this.config.forecastCorrectionOverride != null) {
         console.log('[regulate] New day — resetting forecast correction override to auto');
         this.config.forecastCorrectionOverride = null;
-        this.correctionSamples = [];
         this.saveConfigOverrides();
       }
     }
@@ -189,7 +186,6 @@ export class AppState {
     const vrmForecast = pvSettings.vrmForecastEnabled ? this.vrm.getForecast() : emptyForecast;
     const solarForecast = pvSettings.forecastSolarEnabled ? this.forecastSolar.getForecast() : emptyForecast;
     const forecast = computeEnsembleForecast(vrmForecast, solarForecast);
-    const remainingKwh = this.vrm.getRemainingForecastKwh();
     // Fetch prices (optional — don't block regulation if it fails)
     let prices: Array<{ timestamp: number; price: number | null }> = [];
     try {
@@ -201,33 +197,6 @@ export class AppState {
         const { setLastPriceError } = await import('./server.js');
         setLastPriceError((e as Error).message);
       } catch { /* ignore */ }
-    }
-
-    // --- Auto correction factor averaging over 15-min slot ---
-    // When in auto mode, compute the instantaneous factor, accumulate samples
-    // within the current 15-min slot, and pass the average to the charge plan.
-    let averagedCorrectionOverride = this.config.forecastCorrectionOverride;
-    if (this.config.forecastCorrectionOverride == null && systemState.pvPower != null && forecast.hours.length > 0) {
-      const ih = forecast.intervalHours;
-      const nowMs = Date.now();
-      const intervalMs = ih * 3600 * 1000;
-      const currentSlotMs = Math.floor(nowMs / intervalMs) * intervalMs;
-      const futureHours = forecast.hours.filter(h => h.timestamp.getTime() >= currentSlotMs);
-      if (futureHours.length > 0) {
-        const currentForecastW = futureHours[0].powerW;
-        const peakForecastW = Math.max(...futureHours.map(h => h.powerW));
-        const relevantPowerW = Math.max(currentForecastW, systemState.pvPower);
-        const isStableProduction = relevantPowerW > 500 && relevantPowerW >= peakForecastW * 0.5;
-        if (isStableProduction) {
-          const rawFactor = Math.min(2, Math.max(0.1, systemState.pvPower / currentForecastW));
-          // Add sample and discard samples from previous slots
-          this.correctionSamples = this.correctionSamples.filter(s => s.slotMs === currentSlotMs);
-          this.correctionSamples.push({ slotMs: currentSlotMs, factor: rawFactor });
-          // Pass the averaged factor (null → auto logic in charge-plan will be skipped via override)
-          const avg = this.correctionSamples.reduce((sum, s) => sum + s.factor, 0) / this.correctionSamples.length;
-          averagedCorrectionOverride = Math.round(avg * 100) / 100;
-        }
-      }
     }
 
     let chargePlan = null;
@@ -247,15 +216,19 @@ export class AppState {
         activeMorningDischarge: this.config.activeMorningDischarge,
         activeMorningDischargeMinSocPercent: this.config.activeMorningDischargeMinSocPercent,
         actualPvPowerW: systemState.pvPower,
-        forecastCorrectionOverride: averagedCorrectionOverride,
+        forecastCorrectionOverride: this.config.forecastCorrectionOverride,
+        pvPeakKwp: pvSettings.kwp,
       });
     } catch { /* plan is optional */ }
 
-    // Apply forecast correction factor to remaining kWh so it matches the corrected PV forecast
-    const correctionFactor = chargePlan?.forecastCorrectionFactor ?? 1;
-    const correctedRemainingKwh = remainingKwh * correctionFactor;
+    // Remaining forecast comes from the plan's corrected slots — same decayed
+    // correction and PV-peak cap the chart shows. Falling back to the raw VRM
+    // forecast only when no plan could be computed.
+    const remainingKwh = chargePlan
+      ? computeRemainingForecastKwh(chargePlan)
+      : this.vrm.getRemainingForecastKwh();
 
-    const result = this.controller.computeSetpoint(systemState, forecast, correctedRemainingKwh, prices, chargePlan ?? undefined);
+    const result = this.controller.computeSetpoint(systemState, forecast, remainingKwh, prices, chargePlan ?? undefined);
 
     // Check PV tracker for notification events
     if (this.pvTracker) {
@@ -263,7 +236,6 @@ export class AppState {
         this.pvTracker.check({
           pvPowerW: systemState.pvPower,
           batterySoc: systemState.batterySoc,
-          forecast,
           chargePlan,
           prices,
           gridHistoryService: this.gridHistoryForTracker ?? undefined,
@@ -325,9 +297,6 @@ export class AppState {
   }
 
   updateConfig(updates: Partial<AppStateOptions>): AppStateOptions {
-    if ('forecastCorrectionOverride' in updates) {
-      this.correctionSamples = [];
-    }
     Object.assign(this.config, updates);
     this.controller.updateConfig(this.buildControllerConfig());
     this.wallboxController.updateConfig(this.buildWallboxControllerConfig());

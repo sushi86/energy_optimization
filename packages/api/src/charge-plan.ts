@@ -21,7 +21,16 @@ export interface ChargePlanConfig {
   actualPvPowerW?: number;
   /** Manual override for forecast correction factor (0.1–2.0). null = auto. */
   forecastCorrectionOverride?: number | null;
+  /** Installed PV peak capacity (kWp) — basis for the corrected forecast ceiling. */
+  pvPeakKwp?: number;
 }
+
+/**
+ * Fraction of the nameplate kWp a real array reaches at its best. Losses from
+ * cell temperature, soiling and imperfect angle mean the STC rating is never
+ * met in the field; 0.85 sits just above the observed summer maximum.
+ */
+export const PV_PEAK_DERATE = 0.85;
 
 export type DischargeState = 'active' | 'hold' | 'trickle';
 
@@ -99,6 +108,32 @@ function findPrice(prices: PriceEntry[], timestampSec: number): number | null {
  * 5. Negative prices: always charge, never feed-in
  * 6. Battery must reach targetSoc by end of solar production
  */
+/**
+ * Remaining PV production for the rest of the day, derived from the plan's own
+ * slots. Those already carry the decayed forecast correction and the PV-peak
+ * cap, so this matches what the chart draws — unlike multiplying the raw
+ * forecast by the flat correction factor, which overshoots the whole day with
+ * a correction that is only valid for the next couple of hours.
+ *
+ * The slot the current time falls into is counted pro rata for the part that is
+ * still ahead, so "produced so far + remaining" stays consistent with the
+ * corrected day total.
+ */
+export function computeRemainingForecastKwh(plan: ChargePlan, now: Date = new Date()): number {
+  const slotMs = plan.intervalMinutes * 60 * 1000;
+  const slotHours = plan.intervalMinutes / 60;
+  const nowMs = now.getTime();
+  let kwh = 0;
+  for (const slot of plan.slots) {
+    const startMs = new Date(slot.timestamp).getTime();
+    const endMs = startMs + slotMs;
+    if (endMs <= nowMs) continue;
+    const remainingFraction = nowMs > startMs ? (endMs - nowMs) / slotMs : 1;
+    kwh += (slot.forecastW * slotHours * remainingFraction) / 1000;
+  }
+  return kwh;
+}
+
 export function computeChargePlan(
   forecast: Forecast,
   prices: PriceEntry[],
@@ -140,8 +175,24 @@ export function computeChargePlan(
       forecastCorrectionFactor = Math.min(2, Math.max(0.1, rawFactor));
     }
   }
+  // Decay the correction's influence to 0 over 2h: a live PV reading is a good
+  // predictor for the next slot but says nothing about conditions hours later
+  // (clouds move, sun angle changes). Applying it flat to the whole day
+  // overshoots the peak hour whenever the current-slot mismatch is large.
+  // Cap at the realistically achievable PV peak: real output tops out well
+  // below the STC nameplate rating (cell temperature, soiling, angle), so the
+  // raw kWp is too generous a ceiling to catch an overshooting correction.
+  // A live reading still beats the rule of thumb — never cap below it.
+  const CORRECTION_DECAY_HOURS = 2;
+  const pvPeakW = config.pvPeakKwp != null
+    ? Math.max(config.pvPeakKwp * 1000 * PV_PEAK_DERATE, config.actualPvPowerW ?? 0)
+    : Infinity;
   const futureHours = forecastCorrectionFactor !== 1
-    ? futureHoursRaw.map(h => ({ ...h, powerW: Math.round(h.powerW * forecastCorrectionFactor) }))
+    ? futureHoursRaw.map(h => {
+        const hoursAhead = (h.timestamp.getTime() - currentSlotStartMs) / 3600_000;
+        const decayedFactor = 1 + (forecastCorrectionFactor - 1) * Math.max(0, 1 - hoursAhead / CORRECTION_DECAY_HOURS);
+        return { ...h, powerW: Math.min(Math.round(h.powerW * decayedFactor), pvPeakW) };
+      })
     : futureHoursRaw;
 
   // --- Per-slot analysis ---

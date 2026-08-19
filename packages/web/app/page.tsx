@@ -62,10 +62,16 @@ const modeColors: Record<string, string> = {
   winter: 'bg-blue-500/20 text-blue-400 border-blue-500/30',
 };
 
+const modeLabels: Record<string, string> = {
+  auto: 'Auto',
+  manual: 'Manual',
+  winter: 'Laden',
+};
+
 function ModeSelector({ mode, onChangeMode }: { mode: string; onChangeMode: (m: string) => void }) {
   return (
     <div className="flex gap-1.5">
-      {['auto', 'manual'].map((m) => {
+      {['auto', 'manual', 'winter'].map((m) => {
         const active = mode.toLowerCase() === m;
         const colorClass = active
           ? modeColors[m]
@@ -76,16 +82,10 @@ function ModeSelector({ mode, onChangeMode }: { mode: string; onChangeMode: (m: 
             onClick={() => onChangeMode(m)}
             className={`px-3 py-1 rounded-full text-sm font-medium border transition-colors cursor-pointer ${colorClass}`}
           >
-            {m.charAt(0).toUpperCase() + m.slice(1)}
+            {modeLabels[m]}
           </button>
         );
       })}
-      <Link
-        href="/scenario-decision"
-        className="px-3 py-1 rounded-full text-sm font-medium border transition-colors cursor-pointer bg-transparent text-[var(--text-secondary)] border-[var(--border)] hover:text-[var(--text-primary)] hover:border-[var(--text-secondary)]"
-      >
-        Szenario
-      </Link>
     </div>
   );
 }
@@ -1052,7 +1052,7 @@ function ChargePlanChart({ plan, hoveredSlot, setHoveredSlot, actualFeedIn, actu
       </div>
 
       {/* Legend — click to toggle */}
-      <div className="flex items-center gap-4 text-[10px] text-[var(--text-secondary)] mt-2 select-none">
+      <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-[10px] text-[var(--text-secondary)] mt-2 select-none">
         <button type="button" onClick={() => toggle('charge')} className={`flex items-center gap-1 ${visibleSeries.charge ? '' : 'opacity-30'}`}><span className="inline-block w-2 h-2 rounded-sm bg-[#3b82f6]" /> Laden</button>
         <button type="button" onClick={() => toggle('clipping')} className={`flex items-center gap-1 ${visibleSeries.clipping ? '' : 'opacity-30'}`}><span className="inline-block w-2 h-2 rounded-sm bg-[#eab308]" /> Clipping</button>
         <button type="button" onClick={() => toggle('feedIn')} className={`flex items-center gap-1 ${visibleSeries.feedIn ? '' : 'opacity-30'}`}><span className="inline-block w-2 h-2 rounded-sm bg-[#22c55e]" /> Einspeisung</button>
@@ -1657,11 +1657,6 @@ export default function Dashboard() {
           <>
             <div className="flex flex-wrap items-center gap-4">
               <ModeSelector mode={activeMode} onChangeMode={handleModeChange} />
-              {activeMode === 'winter' && (
-                <span className="px-3 py-1 rounded-full text-sm font-medium border bg-blue-500/20 text-blue-400 border-blue-500/30">
-                  Winter
-                </span>
-              )}
             </div>
             {activeMode === 'manual' && (
               <ManualSetpointSlider value={manualSetpoint} onChange={handleSetpointChange} />
@@ -1743,10 +1738,30 @@ export default function Dashboard() {
       {forecast.length > 0 && (() => {
         const corrFactor = status?.chargePlan?.forecastCorrectionFactor ?? 1;
         const isCorrected = corrFactor !== 1;
+        // Mirror charge-plan.ts: decay the correction to 1 over 2h (a live PV
+        // reading only tells you about right now, not the rest of the day),
+        // never touch past slots, and never exceed the realistically reachable
+        // PV peak (nameplate kWp derated — see PV_PEAK_DERATE), unless the
+        // inverter currently reports more than that.
+        const CORRECTION_DECAY_HOURS = 2;
+        const PV_PEAK_DERATE = 0.85;
+        const SLOT_MS = 15 * 60 * 1000;
+        const currentSlotStartMs = Math.floor(Date.now() / SLOT_MS) * SLOT_MS;
+        const pvPeakW = status?.pvPeakKwp != null
+          ? Math.max(status.pvPeakKwp * 1000 * PV_PEAK_DERATE, pv)
+          : Infinity;
         const correctedForecast = isCorrected
-          ? forecast.map(f => ({ ...f, powerW: Math.round(f.powerW * corrFactor) }))
+          ? forecast.map(f => {
+              const tsMs = new Date(f.timestamp).getTime();
+              if (tsMs < currentSlotStartMs) return f;
+              const hoursAhead = (tsMs - currentSlotStartMs) / 3600_000;
+              const decayedFactor = 1 + (corrFactor - 1) * Math.max(0, 1 - hoursAhead / CORRECTION_DECAY_HOURS);
+              return { ...f, powerW: Math.min(Math.round(f.powerW * decayedFactor), pvPeakW) };
+            })
           : undefined;
-        const correctedTotalKwh = isCorrected ? forecastTotalKwh * corrFactor : forecastTotalKwh;
+        const correctedTotalKwh = isCorrected
+          ? (correctedForecast ?? forecast).reduce((sum, f) => sum + f.powerW * 0.25, 0) / 1000
+          : forecastTotalKwh;
         return (
         <div className="rounded-xl border border-[var(--border)] bg-[var(--bg-card)] p-5">
           <div className="flex items-baseline justify-between mb-4">

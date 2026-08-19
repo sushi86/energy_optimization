@@ -76,6 +76,14 @@ describe('Controller', () => {
       const result = ctrl.computeSetpoint(makeState(), makeForecast(25), 20);
       expect(result.mode).toBe('auto');
     });
+
+    it('can be forced manually via setMode, even when forecast is above threshold', () => {
+      const ctrl = makeController();
+      ctrl.setMode('winter');
+      const result = ctrl.computeSetpoint(makeState(), makeForecast(25), 20);
+      expect(result.mode).toBe('winter');
+      expect(result.setpointW).toBe(0);
+    });
   });
 
   describe('manual mode precedence', () => {

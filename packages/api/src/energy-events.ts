@@ -1,14 +1,4 @@
 import { EventEmitter } from 'node:events';
-import type { Forecast } from './vrm-service.js';
-import type { ChargePlan } from './charge-plan.js';
-import type { PriceEntry } from './server.js';
-
-export interface MorningBriefingEvent {
-  forecast: Forecast;
-  chargePlan: ChargePlan;
-  prices: PriceEntry[];
-  currentSoc: number;
-}
 
 export interface ProductionEndedEvent {
   totalYieldKwh: number;
@@ -58,7 +48,6 @@ export interface WallboxPhasesSwitchedEvent {
 }
 
 interface EnergyEventMap {
-  'pv:morning-briefing': [MorningBriefingEvent];
   'pv:production-ended': [ProductionEndedEvent];
   'mppt:temperature-high': [TemperatureHighEvent];
   'controller:switched-to-manual': [SwitchedToManualEvent];

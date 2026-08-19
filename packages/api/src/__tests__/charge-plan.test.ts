@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { computeChargePlan, type ChargePlanConfig } from '../charge-plan.js';
+import { computeChargePlan, computeRemainingForecastKwh, type ChargePlanConfig } from '../charge-plan.js';
 import type { Forecast, ForecastHour } from '../vrm-service.js';
 import type { PriceEntry } from '../controller.js';
 
@@ -659,5 +659,98 @@ describe('computeChargePlan', () => {
       const plan = computeChargePlan(forecast, makePrices(), makeConfig({ activeMorningDischarge: false }));
       expect(plan.activeDischarge).toBeNull();
     });
+  });
+
+  describe('forecast correction decay and cap', () => {
+    /** Flat forecast of 15-min slots starting at the current 15-min-aligned slot. */
+    function nowForecast(powerW: number, hours: number): Forecast {
+      const intervalMs = 15 * 60 * 1000;
+      const currentSlotStartMs = Math.floor(Date.now() / intervalMs) * intervalMs;
+      const slots: ForecastHour[] = [];
+      for (let i = 0; i < hours * 4; i++) {
+        slots.push({ timestamp: new Date(currentSlotStartMs + i * intervalMs), powerW });
+      }
+      const totalKwh = slots.reduce((sum, s) => sum + s.powerW * 0.25, 0) / 1000;
+      return { hours: slots, totalKwh, intervalHours: 0.25 };
+    }
+
+    it('decays the auto-detected correction factor to 1 by 2 hours ahead', () => {
+      // currentForecastW=5000, actual=7000 → rawFactor=1.4, isStableProduction (7000>500, >=peak*0.5)
+      const forecast = nowForecast(5000, 4);
+      const config = makeConfig({ actualPvPowerW: 7000 });
+
+      const plan = computeChargePlan(forecast, makePrices(0, 4), config);
+
+      expect(plan.forecastCorrectionFactor).toBe(1.4);
+      expect(plan.slots[0].forecastW).toBe(7000); // hoursAhead=0 → full factor
+      expect(plan.slots[4].forecastW).toBe(6000); // hoursAhead=1h → half-decayed
+      expect(plan.slots[8].forecastW).toBe(5000); // hoursAhead=2h → fully decayed to 1
+      expect(plan.slots[12].forecastW).toBe(5000); // beyond 2h → stays uncorrected
+    });
+
+    it('caps the corrected forecast at the realistically achievable PV peak', () => {
+      const forecast = nowForecast(8000, 1);
+      const config = makeConfig({ forecastCorrectionOverride: 2, pvPeakKwp: 10 });
+
+      const plan = computeChargePlan(forecast, makePrices(0, 1), config);
+
+      // 8000 * 2 = 16000, capped at 10 kWp * 0.85 derate = 8500W
+      expect(plan.slots[0].forecastW).toBe(8500);
+    });
+
+    it('lets a measured PV reading above the derated peak stand', () => {
+      // Panels can beat the derate on a cold clear day — the cap must never
+      // pull the current slot below what the inverter actually reports.
+      const forecast = nowForecast(8000, 1);
+      const config = makeConfig({ actualPvPowerW: 9000, pvPeakKwp: 10 });
+
+      const plan = computeChargePlan(forecast, makePrices(0, 1), config);
+
+      expect(plan.slots[0].forecastW).toBe(9000);
+    });
+  });
+});
+
+describe('computeRemainingForecastKwh', () => {
+  /** Flat forecast of 15-min slots starting at the current 15-min-aligned slot. */
+  function nowForecast(powerW: number, hours: number): Forecast {
+    const intervalMs = 15 * 60 * 1000;
+    const currentSlotStartMs = Math.floor(Date.now() / intervalMs) * intervalMs;
+    const slots: ForecastHour[] = [];
+    for (let i = 0; i < hours * 4; i++) {
+      slots.push({ timestamp: new Date(currentSlotStartMs + i * intervalMs), powerW });
+    }
+    const totalKwh = slots.reduce((sum, s) => sum + s.powerW * 0.25, 0) / 1000;
+    return { hours: slots, totalKwh, intervalHours: 0.25 };
+  }
+
+  it('sums the plan slots and counts the current slot pro rata', () => {
+    const plan = computeChargePlan(nowForecast(5000, 1), makePrices(0, 1), makeConfig());
+    const slotStart = new Date(plan.slots[0].timestamp);
+    const fiveMinutesIn = new Date(slotStart.getTime() + 5 * 60 * 1000);
+
+    // 10 of 15 min left in slot 0 (0.833 kWh) + 3 full slots (3.75 kWh)
+    expect(computeRemainingForecastKwh(plan, fiveMinutesIn)).toBeCloseTo(4.5833, 3);
+  });
+
+  it('ignores slots that have already fully elapsed', () => {
+    const plan = computeChargePlan(nowForecast(5000, 1), makePrices(0, 1), makeConfig());
+    const afterTwoSlots = new Date(new Date(plan.slots[0].timestamp).getTime() + 30 * 60 * 1000);
+
+    expect(computeRemainingForecastKwh(plan, afterTwoSlots)).toBeCloseTo(2.5, 6);
+  });
+
+  it('uses the decayed correction, not the flat factor applied to the whole day', () => {
+    // currentForecastW=5000, actual=7000 → factor 1.4, decaying to 1 over 2h
+    const plan = computeChargePlan(nowForecast(5000, 4), makePrices(0, 4), makeConfig({ actualPvPowerW: 7000 }));
+    const slotStart = new Date(plan.slots[0].timestamp);
+
+    const remaining = computeRemainingForecastKwh(plan, slotStart);
+    const flatFactorRemaining = 5000 * 4 * 1.4 / 1000; // what the old calculation produced
+    const uncorrectedRemaining = 5000 * 4 / 1000;
+
+    expect(remaining).toBeGreaterThan(uncorrectedRemaining);
+    expect(remaining).toBeLessThan(flatFactorRemaining);
+    expect(remaining).toBeCloseTo(plan.slots.reduce((sum, s) => sum + s.forecastW * 0.25, 0) / 1000, 6);
   });
 });
